@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use dotenvy::dotenv;
 use std::env;
 use std::fs;
@@ -23,10 +23,20 @@ pub struct App {
 }
 
 #[derive(Parser)]
+#[command(author, version, about, long_about = None)]
 struct Args {
     /// Command to replay
     #[arg(long)]
     cmd: Option<String>,
+
+    #[command(subcommand)]
+    action: Option<Action>,
+}
+
+#[derive(Subcommand)]
+enum Action {
+    /// Print shell integration wrapper for duck (zsh|bash|fish)
+    Init { shell: String },
 }
 
 /// Run a minimal TUI-driven loop. Pressing 'q' or Esc will cancel the
@@ -35,6 +45,32 @@ struct Args {
 async fn main() -> anyhow::Result<()> {
     dotenv().ok();
     let args = Args::parse();
+
+    // Handle shell integration init subcommand early and exit after printing
+    if let Some(action) = &args.action {
+        match action {
+            Action::Init { shell } => {
+                match shell.to_lowercase().as_str() {
+                    "zsh" => {
+                        println!("function duck() {{\n    fc -W  # Write history to file immediately\n    quack \"$@\"\n}}\n");
+                        return Ok(());
+                    }
+                    "bash" => {
+                        println!("duck() {{\n    history -a # Write history to file immediately\n    quack \"$@\"\n}}\n");
+                        return Ok(());
+                    }
+                    "fish" => {
+                        println!("function duck\n    history save\n    quack $argv\nend\n");
+                        return Ok(());
+                    }
+                    other => {
+                        eprintln!("Unsupported shell: {}. Supported: zsh, bash, fish", other);
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    }
     let api_key = env::var("GROQ_API_KEY").ok();
 
     // Determine whether we have git context available.
