@@ -2,7 +2,8 @@ use clap::Parser;
 use dotenvy::dotenv;
 use std::env;
 use tokio::task::JoinHandle;
-use tokio::sync::oneshot;
+use tokio::sync::mpsc;
+use futures_util::StreamExt as FuturesStreamExt;
 
 mod groq;
 mod tui;
@@ -39,21 +40,34 @@ async fn main() -> anyhow::Result<()> {
         String::new()
     };
 
-    // Start the ask_the_duck task if we have an API key. We wire a oneshot
-    // channel to allow graceful cancellation on user quit.
-    let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
-    let mut duck_join: Option<JoinHandle<anyhow::Result<()>>> = None;
+    // Start the ask_the_duck task if we have an API key. This spawns the
+    // real groq::ask_the_duck stream and forwards chunks to the main loop
+    // via an mpsc channel so the UI can be updated progressively.
+    let (app_tx, mut app_rx) = mpsc::channel::<String>(128);
+    let mut duck_join: Option<JoinHandle<()>> = None;
 
-    if let Some(_key) = api_key.as_deref() {
-        // Spawn a background task that would stream AI responses. Here it's
-        // a stub and listens for cancellation via the oneshot receiver.
-        let _git_ctx_clone = git_ctx.clone();
+    if let Some(key) = api_key.as_deref() {
+        let git_ctx_clone = git_ctx.clone();
+        let api_key = key.to_string();
+        let stderr_clone = stderr.clone();
+        let app_tx_clone = app_tx.clone();
+
         duck_join = Some(tokio::spawn(async move {
-            // In a real implementation we'd consume groq::ask_the_duck stream
-            // and forward chunks to the TUI. For the stub, just await the
-            // cancellation signal to simulate long-running work.
-            let _ = cancel_rx.await;
-            Ok(())
+            let mut stream = groq::ask_the_duck(&api_key, &stderr_clone, git_ctx_clone);
+            while let Some(msg) = FuturesStreamExt::next(&mut stream).await {
+                match msg {
+                    Ok(chunk) => {
+                        // Some chunks may be empty markers; forward non-empty
+                        if !chunk.is_empty() {
+                            let _ = app_tx_clone.send(chunk).await;
+                        }
+                    }
+                    Err(_e) => {
+                        // For v0.1 keep it simple: stop on error.
+                        break;
+                    }
+                }
+            }
         }));
     }
 
@@ -62,23 +76,42 @@ async fn main() -> anyhow::Result<()> {
     // or ESC (27) as quit.
     tui.draw(&stderr, "");
 
-    // Read a single byte from stdin synchronously.
-    use std::io::{self, Read};
-    let mut buf = [0u8; 1];
-    let read_res = io::stdin().read(&mut buf);
+    // Event loop: redraw UI on incoming chunks; also allow quitting by
+    // reading one byte from stdin and interpreting 'q' or Esc as quit.
+    let mut app_duck_response = String::new();
 
-    let should_quit = match read_res {
-        Ok(1) => buf[0] == b'q' || buf[0] == 27,
-        _ => false,
-    };
-
-    if should_quit {
-        // Send cancellation to the background task and wait for it to finish.
-        let _ = cancel_tx.send(());
-        if let Some(h) = duck_join {
-            // Await the join handle; ignore errors but ensure task termination.
-            let _ = h.await;
+    // spawn a blocking task to read a single keypress so we don't block
+    // the tokio runtime on std::io.
+    // We'll repeatedly spawn the blocking key reader inside the loop so each
+    // iteration has a fresh handle (avoids moving the JoinHandle).
+    loop {
+        let key_read = tokio::task::spawn_blocking(|| {
+            use std::io::{self, Read};
+            let mut buf = [0u8; 1];
+            let _ = io::stdin().read(&mut buf);
+            buf[0]
+        });
+        tokio::select! {
+            // New AI chunk
+            Some(chunk) = app_rx.recv() => {
+                app_duck_response.push_str(&chunk);
+                tui.draw(&stderr, &app_duck_response);
+            }
+            // Keypress arrived
+            key = key_read => {
+                if let Ok(b) = key {
+                    if b == b'q' || b == 27 {
+                        break;
+                    }
+                }
+                // no quit -> continue to receive AI chunks
+            }
         }
+    }
+
+    // On quit, ensure the background task finishes gracefully.
+    if let Some(h) = duck_join {
+        let _ = h.await;
     }
 
     // Teardown TUI and exit promptly.

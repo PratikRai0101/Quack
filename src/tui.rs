@@ -51,6 +51,7 @@ impl Tui {
         if duck_resp.is_empty() {
             println!("<waiting for AI response...>");
         } else {
+            // Keep background transparent; print the response as-is.
             println!("{}", duck_resp);
         }
     }
