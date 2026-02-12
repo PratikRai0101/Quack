@@ -1,6 +1,8 @@
 use clap::Parser;
 use dotenvy::dotenv;
 use std::env;
+use std::fs;
+use std::process::Command;
 use tokio::task::JoinHandle;
 use tokio::sync::mpsc;
 use futures_util::StreamExt as FuturesStreamExt;
@@ -33,11 +35,46 @@ struct Args {
 async fn main() -> anyhow::Result<()> {
     dotenv().ok();
     let args = Args::parse();
-    let api_key = env::var("GROQ_API_KEY").ok()
+    let api_key = env::var("GROQ_API_KEY").ok();
 
     // Determine whether we have git context available.
     let git_ctx = context::get_git_diff();
     let has_git_context = git_ctx.is_some();
+
+    // Detect OS context: try /etc/os-release PRETTY_NAME, fallback to `uname -a`.
+    let os_context = match fs::read_to_string("/etc/os-release") {
+        Ok(release) => {
+            let mut pretty: Option<String> = None;
+            for line in release.lines() {
+                if let Some(rest) = line.strip_prefix("PRETTY_NAME=") {
+                    // strip surrounding quotes if present
+                    let v = rest.trim().trim_matches('"').to_string();
+                    pretty = Some(v);
+                    break;
+                }
+            }
+            match pretty {
+                Some(p) => format!("OS: {}", p),
+                None => {
+                    // fallback to uname
+                    match Command::new("uname").arg("-a").output() {
+                        Ok(out) => {
+                            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                            format!("OS: {}", s)
+                        }
+                        Err(_) => "OS: Unknown".to_string(),
+                    }
+                }
+            }
+        }
+        Err(_) => match Command::new("uname").arg("-a").output() {
+            Ok(out) => {
+                let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                format!("OS: {}", s)
+            }
+            Err(_) => "OS: Unknown".to_string(),
+        },
+    };
 
     // Initialize TUI.
     let mut tui = tui::Tui::init()?;
@@ -88,7 +125,7 @@ async fn main() -> anyhow::Result<()> {
         let app_tx_clone = app_tx.clone();
 
         duck_join = Some(tokio::spawn(async move {
-        let mut stream = groq::ask_the_duck(&api_key, &stderr_clone, git_ctx_clone);
+        let mut stream = groq::ask_the_duck(&api_key, &stderr_clone, git_ctx_clone, os_context.clone());
             while let Some(msg) = FuturesStreamExt::next(&mut stream).await {
                 match msg {
                     Ok(chunk) => {

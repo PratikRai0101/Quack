@@ -58,52 +58,106 @@ pub fn get_last_command() -> Result<String> {
     let contents = fs::read_to_string(&history_path)
         .with_context(|| format!("Failed to read history file: {}", history_path.display()))?;
 
-    // Iterate lines from the end and find the last meaningful entry.
+    // Iterate lines from the end and find the last meaningful entry using parser
     for line in contents.lines().rev() {
         let line = line.trim();
         if line.is_empty() {
             continue;
         }
 
-        match shell_name.as_str() {
-            "zsh" => {
-                // zsh history lines: ": 167899:0;cargo run"
-                if let Some(pos) = line.find(';') {
-                    let cmd = line[pos + 1..].trim();
-                    if !cmd.is_empty() {
-                        return Ok(cmd.to_string());
-                    }
-                } else if !line.starts_with(':') {
-                    // fallback: use the whole line if it doesn't look like metadata
-                    return Ok(line.to_string());
-                }
-            }
-            "fish" => {
-                // fish history often has lines like "- cmd: cargo run"
-                if let Some(cmd) = line.strip_prefix("- cmd: ") {
-                    let cmd = cmd.trim();
-                    if !cmd.is_empty() {
-                        return Ok(cmd.to_string());
-                    }
-                } else if let Some(cmd) = line.strip_prefix("cmd: ") {
-                    let cmd = cmd.trim();
-                    if !cmd.is_empty() {
-                        return Ok(cmd.to_string());
-                    }
-                } else {
-                    // fallback: use the whole line
-                    return Ok(line.to_string());
-                }
-            }
-            "bash" | _ => {
-                // bash history may contain timestamp lines starting with '#'
-                if line.starts_with('#') {
-                    continue;
-                }
-                return Ok(line.to_string());
-            }
+        if let Some(cmd) = parse_history_line(line, shell_name.as_str()) {
+            return Ok(cmd);
         }
     }
 
     Err(anyhow::anyhow!("No command found in history"))
+}
+
+/// Parse a single history line for a given shell type and return the command
+/// if the line represents a runnable command. `shell_type` should be lowercased
+/// values like "zsh", "bash", or "fish". Returns None when the line should
+/// be skipped (timestamps, empty, metadata-only lines).
+pub fn parse_history_line(line: &str, shell_type: &str) -> Option<String> {
+    let line = line.trim();
+    if line.is_empty() {
+        return None;
+    }
+
+    match shell_type {
+        "zsh" => {
+            if let Some(pos) = line.find(';') {
+                let cmd = line[pos + 1..].trim();
+                if !cmd.is_empty() {
+                    return Some(cmd.to_string());
+                }
+            } else if !line.starts_with(':') {
+                return Some(line.to_string());
+            }
+            None
+        }
+        "fish" => {
+            if let Some(cmd) = line.strip_prefix("- cmd: ") {
+                let cmd = cmd.trim();
+                if !cmd.is_empty() {
+                    return Some(cmd.to_string());
+                }
+                return None;
+            }
+            if let Some(cmd) = line.strip_prefix("cmd: ") {
+                let cmd = cmd.trim();
+                if !cmd.is_empty() {
+                    return Some(cmd.to_string());
+                }
+                return None;
+            }
+            // fallback: treat the whole line as a command
+            Some(line.to_string())
+        }
+        "bash" | _ => {
+            if line.starts_with('#') {
+                return None;
+            }
+            Some(line.to_string())
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_history_line;
+
+    #[test]
+    fn test_zsh_line() {
+        let input = ": 167899:0;cargo run --release";
+        let out = parse_history_line(input, "zsh");
+        assert_eq!(out.as_deref(), Some("cargo run --release"));
+    }
+
+    #[test]
+    fn test_bash_simple() {
+        let input = "ls -la";
+        let out = parse_history_line(input, "bash");
+        assert_eq!(out.as_deref(), Some("ls -la"));
+    }
+
+    #[test]
+    fn test_bash_timestamp() {
+        let input = "#167899";
+        let out = parse_history_line(input, "bash");
+        assert_eq!(out, None);
+    }
+
+    #[test]
+    fn test_fish_with_prefix() {
+        let input = "- cmd: cargo build";
+        let out = parse_history_line(input, "fish");
+        assert_eq!(out.as_deref(), Some("cargo build"));
+    }
+
+    #[test]
+    fn test_fish_clean() {
+        let input = "cargo check";
+        let out = parse_history_line(input, "fish");
+        assert_eq!(out.as_deref(), Some("cargo check"));
+    }
 }

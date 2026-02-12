@@ -6,7 +6,7 @@ use tokio_stream::wrappers::ReceiverStream;
 
 /// ask_the_duck: start an async task that streams Groq responses and
 /// returns a ReceiverStream over which textual chunks will be yielded.
-pub fn ask_the_duck(api_key: &str, error_log: &str, git_context: Option<String>) -> impl futures_util::Stream<Item = Result<String>> {
+pub fn ask_the_duck(api_key: &str, error_log: &str, git_context: Option<String>, os_context: String) -> impl futures_util::Stream<Item = Result<String>> {
     let (tx, rx) = mpsc::channel::<Result<String>>(32);
 
     let api_key = api_key.to_string();
@@ -27,7 +27,7 @@ pub fn ask_the_duck(api_key: &str, error_log: &str, git_context: Option<String>)
             "model": "llama-3.3-70b-versatile",
             "stream": true,
             "messages": [
-                {"role": "system", "content": "You are a helpful CLI debugging assistant. Explain the error and fix it concisely."},
+                {"role": "system", "content": format!("You are a helpful CLI debugging assistant running on {}. When suggesting packages, use the native package manager. Be concise.", os_context)},
                 {"role": "user", "content": user_content}
             ]
         });
