@@ -50,6 +50,28 @@ cargo build --release
 # optional: cargo install --path .
 ```
 
+One-click install & setup
+-------------------------
+
+For a quick install and automatic shell integration, run this one-liner (requires Rust toolchain):
+
+```bash
+git clone <repo-url> && cd quack && cargo install --path . && quack init
+```
+
+What this does:
+
+- Clones the repository and builds/installs the `quack` binary into your cargo bin directory.
+- Runs `quack init`, which appends the safe `quack` wrapper into your shell RC (detects your shell and updates the appropriate file). This wrapper flushes history before running Quack so the latest command is replayed.
+
+After running the one-liner either restart your shell or source the updated rc file, e.g.:
+
+```bash
+
+If you prefer not to install globally, you can run locally and then init:
+
+```bash
+
 Run (local)
 
 - Replay an explicit command and open the TUI when there's output or a non-zero exit code:
@@ -180,4 +202,3 @@ Quack uses:
 - tokio, reqwest for async HTTP + streaming
 - ratatui + crossterm for terminal UI
 - serde / serde_json for payload handling
-
