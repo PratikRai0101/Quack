@@ -71,7 +71,11 @@ pub fn get_last_command() -> Result<String> {
     let contents = fs::read_to_string(&history_path)
         .with_context(|| format!("Failed to read history file: {}", history_path.display()))?;
 
-    // Iterate lines from the end and find the last meaningful entry using parser
+    // Iterate lines from the end and find the last meaningful entry using parser.
+    // Apply a filter to skip commands that are part of the CLI integration
+    // itself (so we don't re-run `quack`/`duck`/history/fc entries).
+    let forbidden = ["quack", "duck", "history", "fc"];
+
     for line in contents.lines().rev() {
         let line = line.trim();
         if line.is_empty() {
@@ -79,8 +83,16 @@ pub fn get_last_command() -> Result<String> {
         }
 
         if let Some(cmd) = parse_history_line(line, shell_name.as_str()) {
+            // get first word of the parsed command to compare against forbidden prefixes
+            let first = cmd.split_whitespace().next().unwrap_or("").to_lowercase();
+            if forbidden.iter().any(|f| *f == first) {
+                // skip this entry and continue searching backwards
+                continue;
+            }
+
             return Ok(cmd);
         }
+        // else continue scanning previous lines (handles fish 'when:' lines etc.)
     }
 
     Err(anyhow::anyhow!("No command found in history"))
@@ -109,6 +121,7 @@ pub fn parse_history_line(line: &str, shell_type: &str) -> Option<String> {
             None
         }
         "fish" => {
+            // Fish history is structured; only accept explicit command lines.
             if let Some(cmd) = line.strip_prefix("- cmd: ") {
                 let cmd = cmd.trim();
                 if !cmd.is_empty() {
@@ -123,8 +136,9 @@ pub fn parse_history_line(line: &str, shell_type: &str) -> Option<String> {
                 }
                 return None;
             }
-            // fallback: treat the whole line as a command
-            Some(line.to_string())
+            // If the line isn't an explicit command entry (e.g. 'when:' or other
+            // metadata), skip it so we don't treat timestamps as commands.
+            None
         }
         "bash" | _ => {
             if line.starts_with('#') {
@@ -171,6 +185,8 @@ mod tests {
     fn test_fish_clean() {
         let input = "cargo check";
         let out = parse_history_line(input, "fish");
-        assert_eq!(out.as_deref(), Some("cargo check"));
+        // For fish, only explicit command entries are accepted (e.g. '- cmd: ...')
+        // plain lines should be ignored.
+        assert_eq!(out, None);
     }
 }
