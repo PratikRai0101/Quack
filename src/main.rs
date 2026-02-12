@@ -4,11 +4,21 @@ use std::env;
 use tokio::task::JoinHandle;
 use tokio::sync::mpsc;
 use futures_util::StreamExt as FuturesStreamExt;
+use crossterm::event::{self, Event, KeyCode};
+use std::time::Duration;
 
 mod groq;
 mod tui;
 mod context;
 mod shell;
+
+// App facade passed to the TUI draw function
+pub struct App {
+    pub error_log: String,
+    pub duck_response: String,
+    pub is_streaming: bool,
+    pub has_git_context: bool,
+}
 
 #[derive(Parser)]
 struct Args {
@@ -23,21 +33,46 @@ struct Args {
 async fn main() -> anyhow::Result<()> {
     dotenv().ok();
     let args = Args::parse();
-    let api_key = env::var("GROQ_API_KEY").ok();
+    let api_key = env::var("GROQ_API_KEY").ok()
 
     // Determine whether we have git context available.
     let git_ctx = context::get_git_diff();
     let has_git_context = git_ctx.is_some();
 
-    // Initialize TUI with the git context flag.
-    let mut tui = tui::Tui::init(has_git_context)?;
+    // Initialize TUI.
+    let mut tui = tui::Tui::init()?;
 
-    // Placeholder: if a command is provided we'd replay it and capture stderr.
+    // Determine the command to replay. If none provided, attempt to read
+    // the last command from the user's shell history (bash/zsh/fish).
     let stderr = if let Some(cmd) = args.cmd {
         let out = shell::replay_command(&cmd)?;
         out.stderr
     } else {
-        String::new()
+        match shell::get_last_command() {
+            Ok(last_cmd) => {
+                let out = shell::replay_command(&last_cmd)?;
+                out.stderr
+            }
+            Err(_) => {
+                eprintln!("Could not read history. Try 'history -a' or use --cmd");
+                return Err(anyhow::anyhow!("No command to replay"));
+            }
+        }
+    };
+
+    // App state
+    struct AppLocal {
+        error_log: String,
+        duck_response: String,
+        is_streaming: bool,
+        has_git_context: bool,
+    }
+
+    let mut app = AppLocal {
+        error_log: stderr.clone(),
+        duck_response: String::new(),
+        is_streaming: false,
+        has_git_context,
     };
 
     // Start the ask_the_duck task if we have an API key. This spawns the
@@ -53,7 +88,7 @@ async fn main() -> anyhow::Result<()> {
         let app_tx_clone = app_tx.clone();
 
         duck_join = Some(tokio::spawn(async move {
-            let mut stream = groq::ask_the_duck(&api_key, &stderr_clone, git_ctx_clone);
+        let mut stream = groq::ask_the_duck(&api_key, &stderr_clone, git_ctx_clone);
             while let Some(msg) = FuturesStreamExt::next(&mut stream).await {
                 match msg {
                     Ok(chunk) => {
@@ -71,40 +106,33 @@ async fn main() -> anyhow::Result<()> {
         }));
     }
 
-    // Main blocking loop: draw the TUI and wait for a single keypress from
-    // stdin. For this scaffold we'll read a single byte and interpret 'q'
-    // or ESC (27) as quit.
-    tui.draw(&stderr, "");
-
-    // Event loop: redraw UI on incoming chunks; also allow quitting by
-    // reading one byte from stdin and interpreting 'q' or Esc as quit.
-    let mut app_duck_response = String::new();
-
-    // spawn a blocking task to read a single keypress so we don't block
-    // the tokio runtime on std::io.
-    // We'll repeatedly spawn the blocking key reader inside the loop so each
-    // iteration has a fresh handle (avoids moving the JoinHandle).
+    // Main TUI event loop: poll for key events and drain AI chunks.
     loop {
-        let key_read = tokio::task::spawn_blocking(|| {
-            use std::io::{self, Read};
-            let mut buf = [0u8; 1];
-            let _ = io::stdin().read(&mut buf);
-            buf[0]
-        });
-        tokio::select! {
-            // New AI chunk
-            Some(chunk) = app_rx.recv() => {
-                app_duck_response.push_str(&chunk);
-                tui.draw(&stderr, &app_duck_response);
+        // Drain incoming AI chunks first
+        while let Ok(chunk) = app_rx.try_recv() {
+            if !chunk.is_empty() {
+                app.duck_response.push_str(&chunk);
+                app.is_streaming = true;
             }
-            // Keypress arrived
-            key = key_read => {
-                if let Ok(b) = key {
-                    if b == b'q' || b == 27 {
-                        break;
-                    }
+        }
+
+        // Draw UI
+        // Build a lightweight App facade expected by the TUI draw function
+        let app_for_draw = crate::App {
+            error_log: app.error_log.clone(),
+            duck_response: app.duck_response.clone(),
+            is_streaming: app.is_streaming,
+            has_git_context: app.has_git_context,
+        };
+        let _ = tui.draw(&app_for_draw);
+
+        // Poll for input events with a short timeout for responsiveness
+        if event::poll(Duration::from_millis(16))? {
+            if let Event::Key(key_event) = event::read()? {
+                match key_event.code {
+                    KeyCode::Char('q') | KeyCode::Esc => break,
+                    _ => {}
                 }
-                // no quit -> continue to receive AI chunks
             }
         }
     }
@@ -115,7 +143,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Teardown TUI and exit promptly.
-    tui.teardown();
+    let _ = tui.exit();
 
     Ok(())
 }

@@ -1,58 +1,83 @@
-/// Minimal TUI implementation used for v0.1 polishing.
-/// It keeps a simple flag whether git context is available and
-/// renders the error context and the duck response (accumulated).
+use crossterm::cursor::{Hide, Show};
+use crossterm::execute;
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+};
+use ratatui::backend::CrosstermBackend;
+use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::style::{Color, Style};
+use ratatui::widgets::BorderType;
+use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
+use ratatui::Terminal;
+use std::io::Stdout;
+
+use crate::App;
+
 pub struct Tui {
-    pub has_git_context: bool,
+    terminal: Terminal<CrosstermBackend<Stdout>>,
 }
 
 impl Tui {
-    /// Initialize the TUI. In a fuller implementation this would enable
-    /// raw mode and set up the terminal. Here we keep it minimal but
-    /// provide a teardown hook the caller must call to restore state.
-    pub fn init(has_git_context: bool) -> anyhow::Result<Self> {
-        Ok(Tui { has_git_context })
+    pub fn init() -> anyhow::Result<Self> {
+        let mut stdout = std::io::stdout();
+        enable_raw_mode()?;
+        execute!(stdout, EnterAlternateScreen, Hide)?;
+        let backend = CrosstermBackend::new(stdout);
+        let terminal = Terminal::new(backend)?;
+        Ok(Tui { terminal })
     }
 
-    /// Restore terminal state. Placeholder for real teardown logic.
-    pub fn teardown(&mut self) {}
+    pub fn exit(&mut self) -> anyhow::Result<()> {
+        disable_raw_mode()?;
+        execute!(self.terminal.backend_mut(), LeaveAlternateScreen, Show)?;
+        self.terminal.show_cursor()?;
+        Ok(())
+    }
 
-    /// Draw the UI. This minimal implementation prints a compact
-    /// representation to stdout so the app can be used without the full
-    /// ratatui dependency wired into this simple scaffold.
-    pub fn draw(&mut self, error_ctx: &str, duck_resp: &str) {
-        // Compose duck title based on whether we have git context.
-        let duck_title = if self.has_git_context {
+    pub fn draw(&mut self, app_state: &App) -> anyhow::Result<()> {
+        let duck_title = if app_state.has_git_context {
             " The Duck (Context Aware) 🦆 "
         } else {
-            " The Duck "
+            " The Duck 🦆 "
         };
 
-        // Simple, idempotent console render: clear screen and print panes.
-        // Keep it simple to avoid terminal mode dependencies in this scaffold.
-        print!("\x1b[2J\x1b[H"); // clear screen, move cursor home
-        println!("+-----------------------------+");
-        println!(
-            "| Error Context{}|",
-            if self.has_git_context {
-                " (Git: Detected)"
-            } else {
-                ""
-            }
-        );
-        println!("+-----------------------------+");
-        if error_ctx.is_empty() {
-            println!("<no stderr captured>");
-        } else {
-            println!("{}", error_ctx);
-        }
-        println!("\n+-----------------------------+");
-        println!("|{}|", duck_title);
-        println!("+-----------------------------+");
-        if duck_resp.is_empty() {
-            println!("<waiting for AI response...>");
-        } else {
-            // Keep background transparent; print the response as-is.
-            println!("{}", duck_resp);
-        }
+        self.terminal.draw(|f| {
+            let size = f.size();
+
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(20), Constraint::Min(3)])
+                .split(size);
+
+            let border_style = Style::default().fg(Color::Cyan);
+            let text_style = Style::default().fg(Color::White).bg(Color::Reset);
+
+            let error_block = Paragraph::new(app_state.error_log.as_ref())
+                .block(
+                    Block::default()
+                        .title(" Error Context ")
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded)
+                        .border_style(border_style),
+                )
+                .style(text_style);
+
+            f.render_widget(error_block, chunks[0]);
+
+            let duck_block = Paragraph::new(app_state.duck_response.as_ref())
+                .wrap(Wrap { trim: true })
+                .block(
+                    Block::default()
+                        .title(duck_title)
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded)
+                        .border_style(border_style),
+                )
+                .style(text_style);
+
+            f.render_widget(duck_block, chunks[1]);
+        })?;
+
+        Ok(())
     }
 }
