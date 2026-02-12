@@ -28,6 +28,13 @@ struct Args {
     /// Command to replay
     #[arg(long)]
     cmd: Option<String>,
+    /// Exit status of the previous command (passed from shell wrapper)
+    #[arg(short = 's', long = "status")]
+    status: Option<i32>,
+
+    /// Optional positional command tokens (allows wrapper to pass original argv)
+    #[arg(last = true)]
+    cmd_args: Vec<String>,
 
     #[command(subcommand)]
     action: Option<Action>,
@@ -68,15 +75,15 @@ async fn main() -> anyhow::Result<()> {
                 let (rc_path, script) = match shell_name.as_str() {
                     "fish" => (
                         home.join(".config/fish/config.fish"),
-                        "function quack\n    history save\n    command quack $argv\nend\n",
+                        "function quack\n    set -l last_status $status\n    history save\n    command quack --status $last_status $argv\nend\n",
                     ),
                     "zsh" => (
                         home.join(".zshrc"),
-                        "quack() {\n    fc -W\n    command quack \"$@\"\n}\n",
+                        "quack() {\n    local last_status=$?\n    fc -W\n    command quack --status $last_status \"$@\"\n}\n",
                     ),
                     "bash" => (
                         home.join(".bashrc"),
-                        "quack() {\n    history -a\n    command quack \"$@\"\n}\n",
+                        "quack() {\n    local last_status=$?\n    history -a\n    command quack --status $last_status \"$@\"\n}\n",
                     ),
                     other => {
                         eprintln!("Unsupported shell: {}. Supported: zsh, bash, fish", other);
@@ -152,10 +159,28 @@ async fn main() -> anyhow::Result<()> {
         },
     };
 
-    // Determine the command to replay. If none provided, attempt to read
-    // the last command from the user's shell history (bash/zsh/fish), then
-    // execute it via the user's shell so quoting and flags are respected.
-    let output = if let Some(cmd) = args.cmd {
+    // If status was provided by the shell wrapper and it indicates success,
+    // exit quietly (graceful silence).
+    if let Some(code) = args.status {
+        if code == 0 {
+            println!("Everything looks ducky! 🦆 (No errors detected)");
+            return Ok(());
+        }
+    }
+
+    // Determine the command to replay. Priority:
+    // 1) --cmd string
+    // 2) positional cmd_args joined (wrapper may pass $argv)
+    // 3) last command from history
+    let cmd_to_run = if let Some(cmd) = args.cmd.clone() {
+        Some(cmd)
+    } else if !args.cmd_args.is_empty() {
+        Some(args.cmd_args.join(" "))
+    } else {
+        None
+    };
+
+    let output = if let Some(cmd) = cmd_to_run {
         shell::replay_command(&cmd)?
     } else {
         match shell::get_last_command() {
