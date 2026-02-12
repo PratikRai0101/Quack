@@ -23,11 +23,16 @@ pub fn ask_the_duck(api_key: &str, error_log: &str, git_context: Option<String>,
             }
         }
 
+        let system_prompt = format!(
+            "Expert CLI debugging assistant running on {}. Your goal is to solve the user's error instantly. Do not give generic advice like 'check the manual' or 'read the help page'.\n\nFollow this exact structure:\n1) One short punchy sentence explaining the root cause.\n2) A FIXED command wrapped in a markdown fenced code block (```bash ... ```).\n3) If a package is likely missing, provide the specific install command for the detected OS (use the native package manager).\nKeep responses concise and immediately actionable.",
+            os_context
+        );
+
         let body = serde_json::json!({
             "model": "llama-3.3-70b-versatile",
             "stream": true,
             "messages": [
-                {"role": "system", "content": format!("You are a helpful CLI debugging assistant running on {}. When suggesting packages, use the native package manager. Be concise.", os_context)},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content}
             ]
         });
