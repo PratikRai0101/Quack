@@ -44,7 +44,7 @@ Prerequisites
 Build from source
 
 ```bash
-git clone <repo-url>
+git clone git@github.com:PratikRai0101/Quack.git
 cd quack
 cargo build --release
 # optional: cargo install --path .
@@ -56,7 +56,7 @@ One-click install & setup
 For a quick install and automatic shell integration, run this one-liner (requires Rust toolchain):
 
 ```bash
-git clone <repo-url> && cd quack && cargo install --path . && quack init
+git clone git@github.com:PratikRai0101/Quack.git && cd quack && cargo install --path . && quack init
 ```
 
 What this does:
