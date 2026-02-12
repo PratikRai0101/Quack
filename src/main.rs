@@ -35,8 +35,8 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Action {
-    /// Print shell integration wrapper for duck (zsh|bash|fish)
-    Init { shell: String },
+    /// Install shell integration for quack into the user's shell rc file
+    Init,
 }
 
 /// Run a minimal TUI-driven loop. Pressing 'q' or Esc will cancel the
@@ -46,28 +46,68 @@ async fn main() -> anyhow::Result<()> {
     dotenv().ok();
     let args = Args::parse();
 
-    // Handle shell integration init subcommand early and exit after printing
+    // Handle shell integration init subcommand: append wrapper to user's rc
     if let Some(action) = &args.action {
         match action {
-            Action::Init { shell } => {
-                match shell.to_lowercase().as_str() {
-                    "zsh" => {
-                        println!("quack() {{\n    fc -W\n    command quack \"$@\"\n}}\n");
+            Action::Init => {
+                let shell_path = env::var("SHELL").unwrap_or_default();
+                let shell_name = std::path::Path::new(&shell_path)
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+
+                let home = match dirs::home_dir() {
+                    Some(h) => h,
+                    None => {
+                        eprintln!("Could not determine home directory to install shell integration");
                         return Ok(());
                     }
-                    "bash" => {
-                        println!("quack() {{\n    history -a\n    command quack \"$@\"\n}}\n");
-                        return Ok(());
-                    }
-                    "fish" => {
-                        println!("function quack\n    history save\n    command quack $argv\nend\n");
-                        return Ok(());
-                    }
+                };
+
+                let (rc_path, script) = match shell_name.as_str() {
+                    "fish" => (
+                        home.join(".config/fish/config.fish"),
+                        "function quack\n    history save\n    command quack $argv\nend\n",
+                    ),
+                    "zsh" => (
+                        home.join(".zshrc"),
+                        "quack() {\n    fc -W\n    command quack \"$@\"\n}\n",
+                    ),
+                    "bash" => (
+                        home.join(".bashrc"),
+                        "quack() {\n    history -a\n    command quack \"$@\"\n}\n",
+                    ),
                     other => {
                         eprintln!("Unsupported shell: {}. Supported: zsh, bash, fish", other);
                         return Ok(());
                     }
+                };
+
+                // Read existing file content if present
+                let existing = std::fs::read_to_string(&rc_path).unwrap_or_default();
+                if existing.contains("function quack") || existing.contains("quack() {") {
+                    println!("quack integration already present in {}", rc_path.display());
+                    return Ok(());
                 }
+
+                // Append the script
+                use std::fs::OpenOptions;
+                use std::io::Write;
+
+                use anyhow::Context;
+                let mut f = OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&rc_path)
+                    .context(format!("Failed to open rc file: {}", rc_path.display()))?;
+
+                writeln!(f, "\n# quack shell integration - added by quack init")?;
+                writeln!(f, "{}", script)?;
+
+                println!("Appended quack integration to {}", rc_path.display());
+                println!("Restart your shell or source the file to enable 'quack'");
+                return Ok(());
             }
         }
     }
