@@ -52,15 +52,15 @@ async fn main() -> anyhow::Result<()> {
             Action::Init { shell } => {
                 match shell.to_lowercase().as_str() {
                     "zsh" => {
-                        println!("function duck() {{\n    fc -W  # Write history to file immediately\n    quack \"$@\"\n}}\n");
+                        println!("quack() {{\n    fc -W\n    command quack \"$@\"\n}}\n");
                         return Ok(());
                     }
                     "bash" => {
-                        println!("duck() {{\n    history -a # Write history to file immediately\n    quack \"$@\"\n}}\n");
+                        println!("quack() {{\n    history -a\n    command quack \"$@\"\n}}\n");
                         return Ok(());
                     }
                     "fish" => {
-                        println!("function duck\n    history save\n    quack $argv\nend\n");
+                        println!("function quack\n    history save\n    command quack $argv\nend\n");
                         return Ok(());
                     }
                     other => {
