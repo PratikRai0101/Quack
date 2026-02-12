@@ -7,17 +7,30 @@ use std::path::PathBuf;
 pub struct CommandOutput {
     // We only read stderr in the current v0.1 CLI flow; keep other fields
     // but prefix unused with underscore to silence warnings.
-    pub _stdout: String,
+    pub stdout: String,
     pub stderr: String,
-    pub _exit_code: i32,
+    pub exit_code: i32,
 }
 
-pub fn replay_command(_command: &str) -> Result<CommandOutput> {
-    // Placeholder: real implementation executes the shell command and captures output.
+pub fn replay_command(command: &str) -> Result<CommandOutput> {
+    // Use the user's shell to evaluate the command string so quoting and
+    // flags are parsed as the shell would. Default to `sh` when SHELL
+    // env var is not present.
+    let shell = env::var("SHELL").unwrap_or_else(|_| "sh".to_string());
+    let output = std::process::Command::new(shell)
+        .arg("-c")
+        .arg(command)
+        .output()
+        .with_context(|| format!("Failed to execute command via shell: {}", command))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let exit_code = output.status.code().unwrap_or(-1);
+
     Ok(CommandOutput {
-        _stdout: String::new(),
-        stderr: String::new(),
-        _exit_code: 0,
+        stdout,
+        stderr,
+        exit_code,
     })
 }
 

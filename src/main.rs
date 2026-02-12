@@ -112,26 +112,37 @@ async fn main() -> anyhow::Result<()> {
         },
     };
 
-    // Initialize TUI.
-    let mut tui = tui::Tui::init()?;
-
     // Determine the command to replay. If none provided, attempt to read
-    // the last command from the user's shell history (bash/zsh/fish).
-    let stderr = if let Some(cmd) = args.cmd {
-        let out = shell::replay_command(&cmd)?;
-        out.stderr
+    // the last command from the user's shell history (bash/zsh/fish), then
+    // execute it via the user's shell so quoting and flags are respected.
+    let output = if let Some(cmd) = args.cmd {
+        shell::replay_command(&cmd)?
     } else {
         match shell::get_last_command() {
-            Ok(last_cmd) => {
-                let out = shell::replay_command(&last_cmd)?;
-                out.stderr
-            }
+            Ok(last_cmd) => shell::replay_command(&last_cmd)?,
             Err(_) => {
                 eprintln!("Could not read history. Try 'history -a' or use --cmd");
                 return Err(anyhow::anyhow!("No command to replay"));
             }
         }
     };
+
+    // Combine stdout and stderr so the UI and AI see both outputs.
+    let combined_output = format!("{}\n{}", output.stdout.trim(), output.stderr.trim());
+
+    // Decide whether to launch the TUI: either non-zero exit or any output.
+    let should_launch = output.exit_code != 0 || !combined_output.trim().is_empty();
+
+    if !should_launch {
+        // Nothing to show; exit quietly after printing any output.
+        if !combined_output.trim().is_empty() {
+            println!("{}", combined_output);
+        }
+        return Ok(());
+    }
+
+    // Initialize TUI since we have something to display.
+    let mut tui = tui::Tui::init()?;
 
     // App state
     struct AppLocal {
@@ -142,7 +153,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let mut app = AppLocal {
-        error_log: stderr.clone(),
+        error_log: combined_output.clone(),
         duck_response: String::new(),
         is_streaming: false,
         has_git_context,
@@ -157,11 +168,11 @@ async fn main() -> anyhow::Result<()> {
     if let Some(key) = api_key.as_deref() {
         let git_ctx_clone = git_ctx.clone();
         let api_key = key.to_string();
-        let stderr_clone = stderr.clone();
+        let combined_clone = combined_output.clone();
         let app_tx_clone = app_tx.clone();
 
         duck_join = Some(tokio::spawn(async move {
-        let mut stream = groq::ask_the_duck(&api_key, &stderr_clone, git_ctx_clone, os_context.clone());
+        let mut stream = groq::ask_the_duck(&api_key, &combined_clone, git_ctx_clone, os_context.clone());
             while let Some(msg) = FuturesStreamExt::next(&mut stream).await {
                 match msg {
                     Ok(chunk) => {
