@@ -48,7 +48,11 @@ impl Tui {
 
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([Constraint::Percentage(20), Constraint::Min(3)])
+                .constraints([
+                    Constraint::Percentage(20),
+                    Constraint::Min(3),
+                    Constraint::Length(1),
+                ])
                 .split(size);
 
             // Stealth aesthetic: muted gray borders, transparent backgrounds
@@ -61,9 +65,8 @@ impl Tui {
             let error_block = Paragraph::new(app_state.error_log.as_ref())
                 .block(
                     Block::default()
-                        .title(" Error Context ")
-                        .title_style(title_style)
-                        .borders(Borders::ALL)
+                        .title(Spans::from(Span::styled(" ERROR CONTEXT ", title_style)))
+                        .borders(Borders::LEFT)
                         .border_type(BorderType::Rounded)
                         .border_style(border_style),
                 )
@@ -96,27 +99,38 @@ impl Tui {
                 if trimmed.starts_with("```") {
                     in_code = !in_code;
                     // add the fence line as dim text
-                    spans.push(Spans::from(Span::raw(trimmed)));
+                    spans.push(Spans::from(Span::styled(
+                        trimmed.to_string(),
+                        Style::default().add_modifier(Modifier::DIM),
+                    )));
                     continue;
                 }
 
-                // Detect headers to enter/exit sections
-                if trimmed.contains("The Glitch") {
+                // Detect headers to enter/exit sections (case-insensitive)
+                if trimmed.to_lowercase().contains("the glitch") {
                     in_glitch = true;
-                    spans.push(Spans::from(Span::styled(trimmed, title_style)));
+                    spans.push(Spans::from(Span::styled(
+                        trimmed.to_uppercase(),
+                        title_style,
+                    )));
                     continue;
                 }
-                if trimmed.contains("The Solution") || trimmed.contains("Pro-Tip") {
+                if trimmed.to_lowercase().contains("the solution")
+                    || trimmed.to_lowercase().contains("pro-tip")
+                {
                     in_glitch = false;
-                    spans.push(Spans::from(Span::styled(trimmed, title_style)));
+                    spans.push(Spans::from(Span::styled(
+                        trimmed.to_uppercase(),
+                        title_style,
+                    )));
                     continue;
                 }
 
                 if in_code {
-                    // code lines: style entire line green
+                    // code lines: style entire line green with a darker background to simulate a block
                     spans.push(Spans::from(Span::styled(
                         trimmed.to_string(),
-                        Style::default().fg(Color::Green),
+                        Style::default().fg(Color::Green).bg(Color::Indexed(236)),
                     )));
                     continue;
                 }
@@ -138,17 +152,29 @@ impl Tui {
                     continue;
                 }
 
-                // Default: plain text
-                spans.push(Spans::from(Span::raw(trimmed.to_string())));
+                // Default: plain text; dim metadata like OS or timestamps
+                if trimmed.starts_with("OS:")
+                    || trimmed.starts_with("when:")
+                    || trimmed.starts_with('#')
+                {
+                    spans.push(Spans::from(Span::styled(
+                        trimmed.to_string(),
+                        Style::default().add_modifier(Modifier::DIM),
+                    )));
+                } else {
+                    spans.push(Spans::from(Span::raw(trimmed.to_string())));
+                }
             }
 
             let duck_block = Paragraph::new(spans)
                 .wrap(Wrap { trim: true })
                 .block(
                     Block::default()
-                        .title(duck_title)
-                        .title_style(title_style)
-                        .borders(Borders::ALL)
+                        .title(Spans::from(Span::styled(
+                            duck_title.to_uppercase(),
+                            title_style,
+                        )))
+                        .borders(Borders::LEFT)
                         .border_type(BorderType::Rounded)
                         .border_style(border_style),
                 )
@@ -166,6 +192,20 @@ impl Tui {
             };
 
             f.render_widget(duck_block, duck_area);
+
+            // Footer: interactive one-liner
+            let footer = Paragraph::new(Spans::from(vec![
+                Span::styled("[q]", Style::default().fg(Color::Cyan)),
+                Span::styled(" Quit  ", Style::default().add_modifier(Modifier::DIM)),
+                Span::styled("[y]", Style::default().fg(Color::Cyan)),
+                Span::styled(" Copy Fix  ", Style::default().add_modifier(Modifier::DIM)),
+                Span::styled("[r]", Style::default().fg(Color::Cyan)),
+                Span::styled(" Run Again", Style::default().add_modifier(Modifier::DIM)),
+            ]))
+            .style(Style::default())
+            .block(Block::default());
+
+            f.render_widget(footer, chunks[2]);
         })?;
 
         Ok(())
