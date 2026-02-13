@@ -66,7 +66,7 @@ impl Tui {
                 .block(
                     Block::default()
                         .title(Spans::from(Span::styled(" ERROR CONTEXT ", title_style)))
-                        .borders(Borders::LEFT)
+                        .borders(Borders::NONE)
                         .border_type(BorderType::Rounded)
                         .border_style(border_style),
                 )
@@ -92,6 +92,9 @@ impl Tui {
             let mut in_code = false;
             let mut in_glitch = false;
             let mut spans: Vec<Spans> = Vec::new();
+
+            // Start analysis with a persistent assistant prompt
+            spans.push(Spans::from(Span::styled("🦆 Quack >", title_style)));
 
             for line in app_state.duck_response.lines() {
                 let trimmed = line.trim_end();
@@ -130,7 +133,7 @@ impl Tui {
                     // code lines: style entire line green with a darker background to simulate a block
                     spans.push(Spans::from(Span::styled(
                         trimmed.to_string(),
-                        Style::default().fg(Color::Green).bg(Color::Indexed(236)),
+                        Style::default().fg(Color::Green).bg(Color::Indexed(234)),
                     )));
                     continue;
                 }
@@ -152,14 +155,25 @@ impl Tui {
                     continue;
                 }
 
-                // Default: plain text; dim metadata like OS or timestamps
+                // Default: plain text; dim metadata like OS or timestamps or contextual tip
                 if trimmed.starts_with("OS:")
                     || trimmed.starts_with("when:")
                     || trimmed.starts_with('#')
                 {
                     spans.push(Spans::from(Span::styled(
                         trimmed.to_string(),
-                        Style::default().add_modifier(Modifier::DIM),
+                        Style::default()
+                            .fg(Color::Indexed(240))
+                            .add_modifier(Modifier::DIM),
+                    )));
+                } else if trimmed.to_lowercase().starts_with("pro-tip")
+                    || trimmed.to_lowercase().starts_with("contextual tip")
+                {
+                    spans.push(Spans::from(Span::styled(
+                        trimmed.to_string(),
+                        Style::default()
+                            .fg(Color::Indexed(240))
+                            .add_modifier(Modifier::DIM),
                     )));
                 } else {
                     spans.push(Spans::from(Span::raw(trimmed.to_string())));
@@ -174,24 +188,38 @@ impl Tui {
                             duck_title.to_uppercase(),
                             title_style,
                         )))
-                        .borders(Borders::LEFT)
+                        .borders(Borders::NONE)
                         .border_type(BorderType::Rounded)
                         .border_style(border_style),
                 )
                 .style(text_style);
+            // Render a single '┃' vertical marker at the left of the analysis area
+            let left_bar_lines: Vec<Spans> = (0..chunks[1].height)
+                .map(|_| Spans::from(Span::styled("┃", Style::default().fg(Color::Indexed(240)))))
+                .collect();
 
-            let duck_area = if chunks[1].width > 2 {
+            let left_bar = Paragraph::new(left_bar_lines).style(Style::default());
+
+            let content_rect = if chunks[1].width > 3 {
                 Rect {
-                    x: chunks[1].x + 1,
+                    x: chunks[1].x + 2,
                     y: chunks[1].y,
-                    width: chunks[1].width - 2,
+                    width: chunks[1].width - 3,
                     height: chunks[1].height,
                 }
             } else {
                 chunks[1]
             };
 
-            f.render_widget(duck_block, duck_area);
+            let left_rect = Rect {
+                x: chunks[1].x,
+                y: chunks[1].y,
+                width: 1,
+                height: chunks[1].height,
+            };
+
+            f.render_widget(left_bar, left_rect);
+            f.render_widget(duck_block, content_rect);
 
             // Footer: interactive one-liner
             let footer = Paragraph::new(Spans::from(vec![
