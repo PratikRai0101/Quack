@@ -259,9 +259,67 @@ async fn main() -> anyhow::Result<()> {
 
     // Helper: copy string to clipboard. Keep synchronous for simplicity.
     fn copy_to_clipboard(s: String) -> Result<(), String> {
-        Clipboard::new()
-            .map_err(|e| format!("clipboard init error: {}", e))
-            .and_then(|mut cb| cb.set_text(s).map_err(|e| format!("clipboard set error: {}", e)))
+        let s_trim = s.trim().to_string();
+        if s_trim.is_empty() {
+            return Err("nothing to copy".to_string());
+        }
+
+        // 1) Try arboard (native clipboard)
+        match Clipboard::new() {
+            Ok(mut cb) => match cb.set_text(s_trim.clone()) {
+                Ok(_) => return Ok(()),
+                Err(e) => {
+                    // fallthrough to command-based fallbacks
+                    let _ = e;
+                }
+            },
+            Err(_) => {
+                // fallthrough
+            }
+        }
+
+        // 2) Try common CLI clipboard utilities: wl-copy, xclip, pbcopy
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        // helper to run a program with stdin
+        let try_cmd = |prog: &str, args: &[&str]| -> Result<(), String> {
+            let mut c = Command::new(prog)
+                .args(args)
+                .stdin(Stdio::piped())
+                .spawn()
+                .map_err(|e| format!("failed to spawn {}: {}", prog, e))?;
+            if let Some(mut stdin) = c.stdin.take() {
+                stdin
+                    .write_all(s_trim.as_bytes())
+                    .map_err(|e| format!("failed to write to {} stdin: {}", prog, e))?;
+            }
+            let status = c
+                .wait()
+                .map_err(|e| format!("failed waiting on {}: {}", prog, e))?;
+            if status.success() {
+                Ok(())
+            } else {
+                Err(format!("{} exited with status {}", prog, status))
+            }
+        };
+
+        // Try wl-copy (Wayland)
+        if let Ok(()) = try_cmd("wl-copy", &[]) {
+            return Ok(());
+        }
+
+        // Try xclip (X11)
+        if let Ok(()) = try_cmd("xclip", &["-selection", "clipboard"]) {
+            return Ok(());
+        }
+
+        // Try pbcopy (macOS)
+        if let Ok(()) = try_cmd("pbcopy", &[]) {
+            return Ok(());
+        }
+
+        Err("no clipboard method succeeded (arboard, wl-copy, xclip, pbcopy)".to_string())
     }
 
     // Main TUI event loop: poll for key events and drain AI chunks.
