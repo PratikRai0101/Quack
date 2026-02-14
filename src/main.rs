@@ -25,7 +25,7 @@ pub struct App {
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
-struct Args {
+    struct Args {
     /// Command to replay
     #[arg(long)]
     cmd: Option<String>,
@@ -36,6 +36,9 @@ struct Args {
     /// Optional positional command tokens (allows wrapper to pass original argv)
     #[arg(last = true)]
     cmd_args: Vec<String>,
+    /// Run clipboard diagnostics and print results then exit
+    #[arg(long)]
+    debug_clip: bool,
 
     #[command(subcommand)]
     action: Option<Action>,
@@ -120,6 +123,38 @@ async fn main() -> anyhow::Result<()> {
         }
     }
     let api_key = env::var("GROQ_API_KEY").ok();
+
+    // Run clipboard diagnostics early if requested
+    if args.debug_clip {
+        println!("Running clipboard diagnostics...");
+        // Attempt arboard init
+        match Clipboard::new() {
+            Ok(mut cb) => match cb.set_text("diagnostic-test".to_string()) {
+                Ok(_) => match cb.get_text() {
+                    Ok(t) => println!("arboard OK: read back '{}'", t),
+                    Err(e) => println!("arboard write OK but read failed: {}", e),
+                },
+                Err(e) => println!("arboard set_text failed: {}", e),
+            },
+            Err(e) => println!("arboard init failed: {}", e),
+        }
+
+        // shims for CLI tools
+        let which = |p: &str| {
+            std::process::Command::new("which")
+                .arg(p)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        };
+
+        println!("wl-copy present: {}", which("wl-copy"));
+        println!("wl-paste present: {}", which("wl-paste"));
+        println!("xclip present: {}", which("xclip"));
+        println!("pbcopy present: {}", which("pbcopy"));
+
+        return Ok(());
+    }
 
     // Determine whether we have git context available.
     let git_ctx = context::get_git_diff();
