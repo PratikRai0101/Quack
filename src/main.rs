@@ -420,13 +420,37 @@ async fn main() -> anyhow::Result<()> {
                         }
 
                         if let Some(text) = to_copy {
-                            match copy_to_clipboard(text.clone()) {
+                        match copy_to_clipboard(text.clone()) {
                                 Ok(_) => {
                                     // Provide lightweight feedback by appending a short message to the error pane
                                     app.error_log = format!("{}\n\n[Copied fix to clipboard]", app.error_log);
                                 }
                                 Err(err) => {
-                                    app.error_log = format!("{}\n\n[Copy failed: {}]", app.error_log, err);
+                                    // If clipboard mechanisms failed, write the text to a temp file
+                                    // and inform the user of the path so they can access it.
+                                    use std::time::{SystemTime, UNIX_EPOCH};
+                                    let ts = SystemTime::now()
+                                        .duration_since(UNIX_EPOCH)
+                                        .map(|d| d.as_secs())
+                                        .unwrap_or(0);
+                                    let mut path = std::env::temp_dir();
+                                    let fname = format!("quack_fix_{}.txt", ts);
+                                    path.push(&fname);
+                                    let write_err = std::fs::write(&path, text.as_bytes()).err();
+
+                                    if let Some(e) = write_err {
+                                        app.error_log = format!(
+                                            "{}\n\n[Copy failed: {}] [Also failed to write temp file: {}]",
+                                            app.error_log, err, e
+                                        );
+                                    } else {
+                                        app.error_log = format!(
+                                            "{}\n\n[Copy failed: {}] [Wrote fix to file: {}]",
+                                            app.error_log,
+                                            err,
+                                            path.display()
+                                        );
+                                    }
                                 }
                             }
                         }
