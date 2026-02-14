@@ -7,6 +7,7 @@ use tokio::task::JoinHandle;
 use tokio::sync::mpsc;
 use futures_util::StreamExt as FuturesStreamExt;
 use crossterm::event::{self, Event, KeyCode};
+use arboard::Clipboard;
 use std::time::Duration;
 
 mod groq;
@@ -235,9 +236,10 @@ async fn main() -> anyhow::Result<()> {
         let api_key = key.to_string();
         let combined_clone = combined_output.clone();
         let app_tx_clone = app_tx.clone();
+        let os_context_clone = os_context.clone();
 
         duck_join = Some(tokio::spawn(async move {
-        let mut stream = groq::ask_the_duck(&api_key, &combined_clone, git_ctx_clone, os_context.clone());
+        let mut stream = groq::ask_the_duck(&api_key, &combined_clone, git_ctx_clone, os_context_clone);
             while let Some(msg) = FuturesStreamExt::next(&mut stream).await {
                 match msg {
                     Ok(chunk) => {
@@ -253,6 +255,13 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }));
+    }
+
+    // Helper: copy string to clipboard. Keep synchronous for simplicity.
+    fn copy_to_clipboard(s: String) -> Result<(), String> {
+        Clipboard::new()
+            .map_err(|e| format!("clipboard init error: {}", e))
+            .and_then(|mut cb| cb.set_text(s).map_err(|e| format!("clipboard set error: {}", e)))
     }
 
     // Main TUI event loop: poll for key events and drain AI chunks.
@@ -280,6 +289,83 @@ async fn main() -> anyhow::Result<()> {
             if let Event::Key(key_event) = event::read()? {
                 match key_event.code {
                     KeyCode::Char('q') | KeyCode::Esc => break,
+                    KeyCode::Char('y') => {
+                        // Copy the most relevant fix to clipboard.
+                        let response = app.duck_response.clone();
+                        let mut to_copy: Option<String> = None;
+
+                        // Prefer THE SOLUTION section if present
+                        if let Some(idx) = response.to_lowercase().find("the solution") {
+                            let rest = &response[idx..];
+                            // Try to find a fenced code block inside THE SOLUTION
+                            if let Some(start) = rest.find("```") {
+                                if let Some(end) = rest[start + 3..].find("```") {
+                                    let mut code = rest[start + 3..start + 3 + end].to_string();
+                                    // strip leading/trailing newlines
+                                    code = code.trim_matches('\n').to_string();
+                                    to_copy = Some(code);
+                                }
+                            }
+                            // Fallback to copying the whole solution section
+                            if to_copy.is_none() {
+                                to_copy = Some(rest.trim().to_string());
+                            }
+                        } else {
+                            // No THE SOLUTION header: try first fenced code block globally
+                            if let Some(start) = response.find("```") {
+                                if let Some(end) = response[start + 3..].find("```") {
+                                    let mut code = response[start + 3..start + 3 + end].to_string();
+                                    code = code.trim_matches('\n').to_string();
+                                    to_copy = Some(code);
+                                }
+                            }
+                        }
+
+                        // Final fallback: copy entire response
+                        if to_copy.is_none() {
+                            to_copy = Some(response.trim().to_string());
+                        }
+
+                        if let Some(text) = to_copy {
+                            match copy_to_clipboard(text.clone()) {
+                                Ok(_) => {
+                                    // Provide lightweight feedback by appending a short message to the error pane
+                                    app.error_log = format!("{}\n\n[Copied fix to clipboard]", app.error_log);
+                                }
+                                Err(err) => {
+                                    app.error_log = format!("{}\n\n[Copy failed: {}]", app.error_log, err);
+                                }
+                            }
+                        }
+                    }
+                    KeyCode::Char('r') => {
+                        // Re-run: spawn a new ask_the_duck task if API key present.
+                        // For simplicity, reuse the existing api_key and combined_output
+                        // from the surrounding scope by replaying the same flow.
+                        // Note: this is a lightweight re-request; it will not cancel the
+                        // previous background task in this simple implementation.
+                        if let Some(key) = api_key.as_deref() {
+                            let git_ctx_clone = git_ctx.clone();
+                            let api_key = key.to_string();
+                            let combined_clone = combined_output.clone();
+                            let app_tx_clone = app_tx.clone();
+                            let os_context_clone = os_context.clone();
+
+                            let _ = tokio::spawn(async move {
+                                let mut stream = groq::ask_the_duck(&api_key, &combined_clone, git_ctx_clone, os_context_clone);
+                                while let Some(msg) = FuturesStreamExt::next(&mut stream).await {
+                                    match msg {
+                                        Ok(chunk) => {
+                                            if !chunk.is_empty() {
+                                                let _ = app_tx_clone.send(chunk).await;
+                                            }
+                                        }
+                                        Err(_) => break,
+                                    }
+                                }
+                            });
+                        }
+                    }
                     _ => {}
                 }
             }

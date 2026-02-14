@@ -66,7 +66,7 @@ impl Tui {
                 .block(
                     Block::default()
                         .title(Spans::from(Span::styled(" ERROR CONTEXT ", title_style)))
-                        .borders(Borders::NONE)
+                        .borders(Borders::ALL)
                         .border_type(BorderType::Rounded)
                         .border_style(border_style),
                 )
@@ -188,38 +188,14 @@ impl Tui {
                             duck_title.to_uppercase(),
                             title_style,
                         )))
-                        .borders(Borders::NONE)
+                        .borders(Borders::ALL)
                         .border_type(BorderType::Rounded)
                         .border_style(border_style),
                 )
                 .style(text_style);
-            // Render a single '┃' vertical marker at the left of the analysis area
-            let left_bar_lines: Vec<Spans> = (0..chunks[1].height)
-                .map(|_| Spans::from(Span::styled("┃", Style::default().fg(Color::Indexed(240)))))
-                .collect();
 
-            let left_bar = Paragraph::new(left_bar_lines).style(Style::default());
-
-            let content_rect = if chunks[1].width > 3 {
-                Rect {
-                    x: chunks[1].x + 2,
-                    y: chunks[1].y,
-                    width: chunks[1].width - 3,
-                    height: chunks[1].height,
-                }
-            } else {
-                chunks[1]
-            };
-
-            let left_rect = Rect {
-                x: chunks[1].x,
-                y: chunks[1].y,
-                width: 1,
-                height: chunks[1].height,
-            };
-
-            f.render_widget(left_bar, left_rect);
-            f.render_widget(duck_block, content_rect);
+            // Render duck block in the middle chunk (no left bar — use full width)
+            f.render_widget(duck_block, chunks[1]);
 
             // Footer: interactive one-liner
             let footer = Paragraph::new(Spans::from(vec![
