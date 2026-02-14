@@ -264,15 +264,26 @@ async fn main() -> anyhow::Result<()> {
             return Err("nothing to copy".to_string());
         }
 
-        // 1) Try arboard (native clipboard)
+        // 1) Try arboard (native clipboard) and verify by reading back
         match Clipboard::new() {
-            Ok(mut cb) => match cb.set_text(s_trim.clone()) {
-                Ok(_) => return Ok(()),
-                Err(e) => {
-                    // fallthrough to command-based fallbacks
-                    let _ = e;
+            Ok(mut cb) => {
+                if let Err(e) = cb.set_text(s_trim.clone()) {
+                    let _ = e; // fallthrough
+                } else {
+                    // Try to read back and verify
+                    match cb.get_text() {
+                        Ok(back) => {
+                            if back.trim() == s_trim.trim() {
+                                return Ok(());
+                            }
+                            // mismatch -> fallthrough to other methods
+                        }
+                        Err(_) => {
+                            // Could not read back; assume success (best-effort) but continue to try external tools
+                        }
+                    }
                 }
-            },
+            }
             Err(_) => {
                 // fallthrough
             }
@@ -304,22 +315,46 @@ async fn main() -> anyhow::Result<()> {
             }
         };
 
-        // Try wl-copy (Wayland)
-        if let Ok(()) = try_cmd("wl-copy", &[]) {
-            return Ok(());
+        // helper to run a program and read its stdout for verification
+        let try_read_cmd = |prog: &str, args: &[&str]| -> Result<(), String> {
+            let output = Command::new(prog)
+                .args(args)
+                .output()
+                .map_err(|e| format!("failed to spawn {}: {}", prog, e))?;
+            if output.status.success() {
+                let out = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if out == s_trim {
+                    Ok(())
+                } else {
+                    Err(format!("verification mismatch for {}", prog))
+                }
+            } else {
+                Err(format!("{} exited with status {}", prog, output.status))
+            }
+        };
+
+        // Try wl-copy (Wayland) and verify with wl-paste
+        if try_cmd("wl-copy", &[]).is_ok() {
+            if let Ok(()) = try_read_cmd("wl-paste", &[]) {
+                return Ok(());
+            }
         }
 
-        // Try xclip (X11)
-        if let Ok(()) = try_cmd("xclip", &["-selection", "clipboard"]) {
-            return Ok(());
+        // Try xclip (X11) and verify with xclip -o
+        if try_cmd("xclip", &["-selection", "clipboard"]).is_ok() {
+            if let Ok(()) = try_read_cmd("xclip", &["-selection", "clipboard", "-o"]) {
+                return Ok(());
+            }
         }
 
-        // Try pbcopy (macOS)
-        if let Ok(()) = try_cmd("pbcopy", &[]) {
-            return Ok(());
+        // Try pbcopy (macOS) and verify with pbpaste
+        if try_cmd("pbcopy", &[]).is_ok() {
+            if let Ok(()) = try_read_cmd("pbpaste", &[]) {
+                return Ok(());
+            }
         }
 
-        Err("no clipboard method succeeded (arboard, wl-copy, xclip, pbcopy)".to_string())
+        Err("no clipboard method succeeded (arboard, wl-copy, xclip, pbcopy) or verification failed".to_string())
     }
 
     // Main TUI event loop: poll for key events and drain AI chunks.
