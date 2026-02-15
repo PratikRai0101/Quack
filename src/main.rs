@@ -293,7 +293,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Helper: copy string to clipboard. Keep synchronous for simplicity.
-    fn copy_to_clipboard(s: String) -> Result<(), String> {
+    fn copy_to_clipboard(s: String) -> Result<String, String> {
         let s_trim = s.trim().to_string();
         if s_trim.is_empty() {
             return Err("nothing to copy".to_string());
@@ -309,18 +309,22 @@ async fn main() -> anyhow::Result<()> {
                     match cb.get_text() {
                         Ok(back) => {
                             if back.trim() == s_trim.trim() {
-                                return Ok(());
+                                return Ok("arboard: verified readback".to_string());
                             }
                             // mismatch -> fallthrough to other methods
+                            let note = format!("arboard: set but readback mismatch (read='{}')", back);
+                            // continue attempting other methods, but keep note
+                            let _ = note;
                         }
-                        Err(_) => {
-                            // Could not read back; assume success (best-effort) but continue to try external tools
+                        Err(e) => {
+                            // Could not read back; continue to other methods but record
+                            let _ = format!("arboard: set but get_text failed: {}", e);
                         }
                     }
                 }
             }
-            Err(_) => {
-                // fallthrough
+            Err(e) => {
+                let _ = format!("arboard init failed: {}", e);
             }
         }
 
@@ -351,18 +355,14 @@ async fn main() -> anyhow::Result<()> {
         };
 
         // helper to run a program and read its stdout for verification
-        let try_read_cmd = |prog: &str, args: &[&str]| -> Result<(), String> {
+        let try_read_cmd = |prog: &str, args: &[&str]| -> Result<String, String> {
             let output = Command::new(prog)
                 .args(args)
                 .output()
                 .map_err(|e| format!("failed to spawn {}: {}", prog, e))?;
             if output.status.success() {
                 let out = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if out == s_trim {
-                    Ok(())
-                } else {
-                    Err(format!("verification mismatch for {}", prog))
-                }
+                Ok(out)
             } else {
                 Err(format!("{} exited with status {}", prog, output.status))
             }
@@ -370,27 +370,46 @@ async fn main() -> anyhow::Result<()> {
 
         // Try wl-copy (Wayland) and verify with wl-paste. Also attempt to set primary selection.
         if try_cmd("wl-copy", &[]).is_ok() {
+            let mut diag = Vec::new();
             // try to also set primary (best-effort)
             let _ = try_cmd("wl-copy", &["--primary"]);
-            if try_read_cmd("wl-paste", &[]).is_ok() || try_read_cmd("wl-paste", &["--primary"]).is_ok() {
-                return Ok(());
+            match try_read_cmd("wl-paste", &[]) {
+                Ok(v) if v == s_trim => return Ok("wl-copy: clipboard verified via wl-paste".to_string()),
+                Ok(v) => diag.push(format!("wl-paste returned: '{}'", v)),
+                Err(e) => diag.push(format!("wl-paste error: {}", e)),
             }
+            match try_read_cmd("wl-paste", &["--primary"]) {
+                Ok(v) if v == s_trim => return Ok("wl-copy: primary verified via wl-paste --primary".to_string()),
+                Ok(v) => diag.push(format!("wl-paste --primary returned: '{}'", v)),
+                Err(e) => diag.push(format!("wl-paste --primary error: {}", e)),
+            }
+            let note = diag.join("; ");
+            let _ = note; // continue to other methods
         }
 
         // Try xclip (X11) and verify with xclip -o. Also set primary selection.
         if try_cmd("xclip", &["-selection", "clipboard"]).is_ok() {
+            let mut diag = Vec::new();
             let _ = try_cmd("xclip", &["-selection", "primary"]);
-            if try_read_cmd("xclip", &["-selection", "clipboard", "-o"]).is_ok()
-                || try_read_cmd("xclip", &["-selection", "primary", "-o"]).is_ok()
-            {
-                return Ok(());
+            match try_read_cmd("xclip", &["-selection", "clipboard", "-o"]) {
+                Ok(v) if v == s_trim => return Ok("xclip: clipboard verified via xclip -o".to_string()),
+                Ok(v) => diag.push(format!("xclip -o returned: '{}'", v)),
+                Err(e) => diag.push(format!("xclip -o error: {}", e)),
             }
+            match try_read_cmd("xclip", &["-selection", "primary", "-o"]) {
+                Ok(v) if v == s_trim => return Ok("xclip: primary verified via xclip -o primary".to_string()),
+                Ok(v) => diag.push(format!("xclip primary -o returned: '{}'", v)),
+                Err(e) => diag.push(format!("xclip primary -o error: {}", e)),
+            }
+            let _ = diag.join("; ");
         }
 
         // Try pbcopy (macOS) and verify with pbpaste
         if try_cmd("pbcopy", &[]).is_ok() {
-            if let Ok(()) = try_read_cmd("pbpaste", &[]) {
-                return Ok(());
+            match try_read_cmd("pbpaste", &[]) {
+                Ok(v) if v == s_trim => return Ok("pbcopy: verified via pbpaste".to_string()),
+                Ok(v) => return Ok(format!("pbcopy wrote but pbpaste returned: '{}'", v)),
+                Err(e) => return Err(format!("pbcopy write succeeded but pbpaste failed: {}", e)),
             }
         }
 
