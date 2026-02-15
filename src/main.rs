@@ -368,16 +368,21 @@ async fn main() -> anyhow::Result<()> {
             }
         };
 
-        // Try wl-copy (Wayland) and verify with wl-paste
+        // Try wl-copy (Wayland) and verify with wl-paste. Also attempt to set primary selection.
         if try_cmd("wl-copy", &[]).is_ok() {
-            if let Ok(()) = try_read_cmd("wl-paste", &[]) {
+            // try to also set primary (best-effort)
+            let _ = try_cmd("wl-copy", &["--primary"]);
+            if try_read_cmd("wl-paste", &[]).is_ok() || try_read_cmd("wl-paste", &["--primary"]).is_ok() {
                 return Ok(());
             }
         }
 
-        // Try xclip (X11) and verify with xclip -o
+        // Try xclip (X11) and verify with xclip -o. Also set primary selection.
         if try_cmd("xclip", &["-selection", "clipboard"]).is_ok() {
-            if let Ok(()) = try_read_cmd("xclip", &["-selection", "clipboard", "-o"]) {
+            let _ = try_cmd("xclip", &["-selection", "primary"]);
+            if try_read_cmd("xclip", &["-selection", "clipboard", "-o"]).is_ok()
+                || try_read_cmd("xclip", &["-selection", "primary", "-o"]).is_ok()
+            {
                 return Ok(());
             }
         }
