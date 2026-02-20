@@ -1,9 +1,9 @@
 Quack
 =====
 
-[![Build](https://img.shields.io/badge/build-passing-brightgreen)]() [![License](https://img.shields.io/badge/license-MIT-blue)]()
+[![Build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/PratikRai0101/Quack/actions) [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-Quack is a small, fast Rust CLI that replays a failing shell command, captures stdout/stderr, asks a streaming Groq LLM for a concise root-cause analysis and an immediate fix, and presents the answer in a native terminal UI.
+Quack is a small, fast Rust CLI that replays a failing shell command, captures stdout/stderr, and asks a streaming Groq LLM (or compatible streaming LLM) for a concise root-cause analysis and an immediate fix. Answers stream into a terminal TUI so you can act immediately.
 
 Quack is focused on one thing: give you a corrected command you can run right away — no generic hand-waving, just actionable fixes.
 
