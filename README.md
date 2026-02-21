@@ -3,9 +3,9 @@ Quack
 
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/PratikRai0101/Quack/actions) [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-Quack is a small, fast Rust CLI that replays a failing shell command, captures stdout/stderr, and asks a streaming Groq LLM (or compatible streaming LLM) for a concise root-cause analysis and an immediate fix. Answers stream into a terminal TUI so you can act immediately.
+Quack is a small, fast Rust CLI that replays a failing shell command, captures stdout/stderr, and asks a streaming Groq LLM (or a compatible streaming LLM) for a concise root-cause analysis and an immediate fix. Answers stream into a terminal TUI so you can act immediately.
 
-Quack is focused on one thing: give you a corrected command you can run right away — no generic hand-waving, just actionable fixes.
+Quack focuses on one thing: provide a corrected command you can run right away — focused, actionable fixes.
 
 Table of contents
 - Background
@@ -21,7 +21,7 @@ Table of contents
 Background
 ----------
 
-Developers spend too much time switching between terminal, search results, and docs when a command errors. Quack automates the triage: replay the command, capture output, and ask a high-quality model for a precise fix — streamed into your terminal so you can act immediately.
+Developers spend too much time switching between the terminal, search results, and docs when a command errors. Quack automates the triage: replay the command, capture output, and ask a high-quality model for a precise fix — streamed into your terminal so you can act immediately.
 
 Features
 --------
@@ -45,7 +45,7 @@ Build from source
 
 ```bash
 git clone git@github.com:PratikRai0101/Quack.git
-cd quack
+cd Quack
 cargo build --release
 # optional: cargo install --path .
 ```
@@ -56,7 +56,7 @@ One-click install & setup
 For a quick install and automatic shell integration, run this one-liner (requires Rust toolchain):
 
 ```bash
-git clone git@github.com:PratikRai0101/Quack.git && cd quack && cargo install --path . && quack init
+git clone git@github.com:PratikRai0101/Quack.git && cd Quack && cargo install --path . && quack init
 ```
 
 What this does:
@@ -67,23 +67,37 @@ What this does:
 After running the one-liner either restart your shell or source the updated rc file, e.g.:
 
 ```bash
-
-If you prefer not to install globally, you can run locally and then init:
-
-```bash
-
-Run (local)
-
-- Replay an explicit command and open the TUI when there's output or a non-zero exit code:
-
-```bash
-cargo run -- --cmd "ls -z"
+# restart or source your shell rc file
 ```
 
-- Run without arguments (Quack will look up your shell history and replay the last valid command):
+If you prefer not to install globally, build and run locally:
 
 ```bash
-cargo run
+cargo run -- --cmd "echo hello"
+```
+
+Usage details
+-------------
+
+Quick Start
+
+1. Ensure `GROQ_API_KEY` is set (or run without model integration for local debugging).
+2. Run `quack --cmd "<failing command>"` or `quack` to replay the last history entry.
+3. TUI: Top pane shows the command output; bottom pane streams a structured, scannable expert response with the corrected command.
+4. Quit with `q` or `Esc`.
+
+Key options
+
+- `--cmd <STR>` : replay this command instead of reading history
+- `quack init`  : append the wrapper to your shell rc (fish/zsh/bash)
+
+Quick example
+-------------
+
+Run Quack against a failing command to see a streamed suggestion:
+
+```bash
+quack --cmd "ls /nonexistent"
 ```
 
 Shell integration (one-click)
@@ -143,11 +157,6 @@ Quick Start
 3. TUI: Top pane shows the command output; bottom pane streams a structured, scannable expert response with the corrected command.
 4. Quit with `q` or `Esc`.
 
-Key options
-
-- `--cmd <STR>` : replay this command instead of reading history
-- `quack init`  : append the wrapper to your shell rc (fish/zsh/bash)
-
 Development
 -----------
 
@@ -202,3 +211,8 @@ Quack uses:
 - tokio, reqwest for async HTTP + streaming
 - ratatui + crossterm for terminal UI
 - serde / serde_json for payload handling
+
+Support or questions
+--------------------
+
+Open an issue or discussion on the repository; include the failing command and any relevant logs.
