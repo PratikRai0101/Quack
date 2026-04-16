@@ -13,6 +13,8 @@ type State = {
   isAnalyzing: boolean;
   isStreaming: boolean;
   es: any | null;
+  inputActive: boolean;
+  setInputActive: (b: boolean) => void;
   analyze: (command: string) => Promise<void>;
   appendChunk: (chunk: string) => void;
   copyFix: () => Promise<boolean>;
@@ -31,6 +33,8 @@ export const useStore = create<State>((set, get) => ({
   isAnalyzing: false,
   isStreaming: false,
   es: null,
+  inputActive: false,
+  setInputActive: (b: boolean) => set({ inputActive: b }),
 
   analyze: async (command: string) => {
     const base = get().backendUrl;
