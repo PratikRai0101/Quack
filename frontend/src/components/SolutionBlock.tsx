@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import { extractFirstFencedCode } from '../utils/markdown.js';
 import useStore from '../store.js';
+import CodeBlock from './CodeBlock.js';
 
 export default function SolutionBlock({ content }: { content: string }) {
   const snippet = React.useMemo(() => extractFirstFencedCode(content), [content]);
@@ -14,7 +15,7 @@ export default function SolutionBlock({ content }: { content: string }) {
       </Box>
 
       {snippet ? (
-        <Box marginTop={1} flexDirection="column"><Text>{snippet.code}</Text></Box>
+        <Box marginTop={1} flexDirection="column"><CodeBlock code={snippet.code} /></Box>
       ) : (
         <Box marginTop={1}><Text dimColor>No fenced code found.</Text></Box>
       )}
