@@ -18,6 +18,7 @@ type State = {
   copyFix: () => Promise<boolean>;
   reAnalyze: () => Promise<void>;
   reset: () => void;
+  followUp: (question: string) => Promise<void>;
 };
 
 export const useStore = create<State>((set, get) => ({
@@ -93,7 +94,59 @@ export const useStore = create<State>((set, get) => ({
     if (cmd) await get().analyze(cmd);
   },
 
-  reset: () => set({ sessionId: null, command: null, stdout: '', stderr: '', aiResponse: '', isAnalyzing: false, isStreaming: false })
+    reset: () => set({ sessionId: null, command: null, stdout: '', stderr: '', aiResponse: '', isAnalyzing: false, isStreaming: false }),
+
+    followUp: async (question: string) => {
+      const base = get().backendUrl;
+      const sessionId = get().sessionId;
+      if (!sessionId) {
+        get().appendChunk("\n\n### Follow-up (stubbed)\nNo active session. Your question: > " + question + "\n");
+        return;
+      }
+      // Close any open EventSource
+      const prevEs = get().es;
+      if (prevEs) try { prevEs.close(); set({ es: null }); } catch {}
+      set({ isStreaming: true });
+      let url = '';
+      try {
+        const res = await fetch(`${base}/api/followup`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: sessionId, question })
+        });
+        if (!res.ok) throw new Error(`Follow-up failed: ${res.statusText}`);
+        const data = await res.json();
+        url = data.stream_url;
+        if (url && url.startsWith('/')) url = base + url;
+        if (!url) throw new Error('No stream_url in response');
+      } catch (e: any) {
+        get().appendChunk("\n\n### Follow-up (stubbed)\nThe backend does not provide /api/followup in dev mode. This is a simulated reply for frontend testing.\n");
+        set({ isStreaming: false });
+        return;
+      }
+      // Open stream if url
+      try {
+        const es = new EventSource(url);
+        set({ es });
+        es.addEventListener('chunk', (evt: any) => {
+          try {
+            const payload = JSON.parse(evt.data);
+            if (payload && payload.content) get().appendChunk(payload.content);
+            else get().appendChunk(evt.data);
+          } catch { get().appendChunk(evt.data); }
+        });
+        es.addEventListener('done', () => { try { es.close(); } catch {} set({ isStreaming: false, es: null }); });
+        es.onerror = (err: any) => {
+          console.error('SSE error', err);
+          try { es.close(); } catch {}
+          set({ isStreaming: false, es: null });
+          get().appendChunk('\n\n[Stream error: connection dropped]');
+        };
+      } catch (e: any) {
+        get().appendChunk("\n\n[Error establishing stream: " + (e.message ?? e) + "]\n");
+        set({ isStreaming: false });
+      }
+    }
 }));
 
 export default useStore;
