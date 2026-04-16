@@ -5,8 +5,13 @@ use chrono::Utc;
 use std::time::Duration;
 use async_stream::stream;
 use futures_core::Stream;
-use actix_web::body::BodyStream;
 use actix_web::http::header::{CONTENT_TYPE, CACHE_CONTROL};
+
+mod db;
+mod services;
+use db::migrations::run_migrations;
+use db::pool::get_connection;
+
 
 #[derive(Deserialize)]
 struct AnalyzeRequest {
@@ -75,16 +80,25 @@ async fn analyze_stream(path: web::Path<String>, _req: HttpRequest) -> impl Resp
         yield Ok(actix_web::web::Bytes::from("event: done\ndata: {}\n\n"));
     };
 
-    let body = BodyStream::new(s);
-
     HttpResponse::Ok()
         .insert_header((CONTENT_TYPE, "text/event-stream"))
         .insert_header((CACHE_CONTROL, "no-cache"))
-        .streaming(body)
+        .streaming(s)
 }
+
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    // Load .env if present
+    let _ = dotenvy::dotenv();
+
+    // Initialize DB migrations
+    let db_path = std::env::var("DATABASE_URL").unwrap_or_else(|_| "quack.db".to_string());
+    match run_migrations(&db_path) {
+        Ok(_) => println!("Database migrations applied (db={})", db_path),
+        Err(e) => eprintln!("Failed to apply migrations: {}", e),
+    }
+
     let port: u16 = std::env::var("PORT").unwrap_or_else(|_| "3001".to_string()).parse().unwrap_or(3001);
     println!("Starting quack-server on http://127.0.0.1:{}", port);
 
