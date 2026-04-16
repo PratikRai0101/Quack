@@ -3,6 +3,7 @@ import { Box, Text } from 'ink';
 import Header from './components/Header.js';
 import ErrorOutput from './components/ErrorOutput.js';
 import StreamingText from './components/StreamingText.js';
+import InputPrompt from './components/InputPrompt.js';
 import useStore from './store.js';
 
 import { useInput } from 'ink';
@@ -12,7 +13,9 @@ export default function App({ command }: { command?: string }) {
   const analyze = useStore((s) => s.analyze);
   const sessionId = useStore((s) => s.sessionId);
 
+  const inputActive = useStore((s) => s.inputActive);
   useInput((input, key) => {
+    if (inputActive) return; // user typing in InputPrompt
     if (input === 'q' || key.escape) process.exit(0);
     if (input === 'y') useStore.getState().copyFix();
     if (input === 'r') useStore.getState().reAnalyze();
@@ -41,6 +44,8 @@ export default function App({ command }: { command?: string }) {
       <ErrorOutput />
       <Box marginTop={1} />
       <StreamingText />
+      <Box marginTop={1} />
+      <InputPrompt />
       <Box marginTop={1} />
       <Text dimColor>Type y to copy solution, r to re-analyze, q to quit</Text>
     </Box>
