@@ -7,8 +7,11 @@ export default function InputPrompt() {
   const [value, setValue] = useState('');
   const followUp = useStore((s) => s.followUp);
   const appendChunk = useStore((s) => s.appendChunk);
+  const setInputActive = useStore((s) => s.setInputActive);
+  React.useEffect(() => () => setInputActive(false), [setInputActive]);
 
   const onSubmit = async (input: string) => {
+    setInputActive(false);
     const q = input.trim();
     if (!q) return;
     // echo user question into the log
@@ -28,7 +31,7 @@ export default function InputPrompt() {
   return (
     <Box>
       <Text dimColor>&gt; </Text>
-      <TextInput value={value} onChange={setValue} onSubmit={onSubmit} />
+      <TextInput value={value} onChange={(val) => { setValue(val); setInputActive(val.length > 0); }} onSubmit={onSubmit} />
     </Box>
   );
 }
