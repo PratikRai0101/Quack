@@ -9,6 +9,7 @@ use actix_web::http::header::{CONTENT_TYPE, CACHE_CONTROL};
 
 mod db;
 mod services;
+mod routes;
 use db::migrations::run_migrations;
 use db::pool::get_connection;
 
@@ -134,6 +135,11 @@ async fn main() -> std::io::Result<()> {
             .service(health)
             .service(analyze)
             .service(analyze_stream)
+            .service(crate::routes::history::list_history)
+            .service(crate::routes::history::get_history)
+            .service(crate::routes::history::delete_history)
+            .service(crate::routes::followup::followup)
+            .service(crate::routes::followup::followup_stream)
     })
     .bind(("127.0.0.1", port))?
     .run()
