@@ -39,21 +39,48 @@ async fn health() -> impl Responder {
 
 #[post("/api/analyze")]
 async fn analyze(req: web::Json<AnalyzeRequest>) -> impl Responder {
-    // For initial iteration we return a session stub and simulated stderr
-    let session_id = Uuid::new_v4().to_string();
-    let res = AnalyzeResponse {
-        session_id: session_id.clone(),
-        command: req.command.clone(),
-        stdout: "".to_string(),
-        stderr: "simulated error: file not found".to_string(),
-        exit_code: 1,
-        os_context: format!("OS: {}", std::env::consts::OS),
-        has_git_context: false,
-        project_type: None,
-        created_at: Utc::now().to_rfc3339(),
-    };
-
-    HttpResponse::Ok().json(res)
+    // Run the command via shell service
+    match services::shell::replay_command(&req.command) {
+        Ok(out) => {
+            // Try to persist session
+            let db_path = std::env::var("DATABASE_URL").unwrap_or_else(|_| "quack.db".to_string());
+            match get_connection(&db_path) {
+                Ok(conn) => {
+                    let git_ctx = services::context::get_git_diff();
+                    let os_ctx = services::context::detect_os();
+                    let project_type = services::context::detect_project_type(None);
+                    match services::session::create_session(&conn, &req.command, &out.stdout, &out.stderr, out.exit_code, &os_ctx, git_ctx.as_deref(), project_type.as_deref()) {
+                        Ok(session_id) => {
+                            let res = AnalyzeResponse {
+                                session_id: session_id.clone(),
+                                command: req.command.clone(),
+                                stdout: out.stdout.clone(),
+                                stderr: out.stderr.clone(),
+                                exit_code: out.exit_code,
+                                os_context: os_ctx,
+                                has_git_context: git_ctx.is_some(),
+                                project_type: project_type.clone(),
+                                created_at: Utc::now().to_rfc3339(),
+                            };
+                            HttpResponse::Ok().json(res)
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to create session: {}", e);
+                            HttpResponse::InternalServerError().json(serde_json::json!({"error":"Failed to persist session"}))
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to open DB: {}", e);
+                    HttpResponse::InternalServerError().json(serde_json::json!({"error":"DB unavailable"}))
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("Failed to replay command: {}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({"error":"Failed to replay command"}))
+        }
+    }
 }
 
 #[get("/api/analyze/{id}/stream")]
