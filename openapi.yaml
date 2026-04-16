@@ -1,0 +1,172 @@
+openapi: 3.0.3
+info:
+  title: Quack v2 API
+  version: "2.0.0"
+  description: Minimal OpenAPI spec for Quack v2 (MVP)
+servers:
+  - url: http://localhost:3001
+paths:
+  /api/health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  version:
+                    type: string
+  /api/analyze:
+    post:
+      summary: Submit a command for analysis
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                command:
+                  type: string
+                working_directory:
+                  type: string
+      responses:
+        '200':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                  command:
+                    type: string
+                  stdout:
+                    type: string
+                  stderr:
+                    type: string
+                  exit_code:
+                    type: integer
+                  os_context:
+                    type: string
+                  has_git_context:
+                    type: boolean
+                  project_type:
+                    type: string
+                  created_at:
+                    type: string
+  /api/analyze/{id}/stream:
+    get:
+      summary: SSE stream for AI response
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Server-sent events stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /api/followup:
+    post:
+      summary: Send a follow-up question
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                session_id:
+                  type: string
+                question:
+                  type: string
+      responses:
+        '200':
+          description: Followup accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stream_url:
+                    type: string
+  /api/history:
+    get:
+      summary: List past sessions
+      responses:
+        '200':
+          description: List of sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    command:
+                      type: string
+                    exit_code:
+                      type: integer
+                    created_at:
+                      type: string
+  /api/settings:
+    get:
+      summary: Get settings
+      responses:
+        '200':
+          description: Settings object
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  api_key:
+                    type: string
+                  provider:
+                    type: string
+                  model:
+                    type: string
+                  base_url:
+                    type: string
+    put:
+      summary: Update settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                api_key:
+                  type: string
+                provider:
+                  type: string
+                model:
+                  type: string
+      responses:
+        '200':
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  api_key:
+                    type: string
+                  provider:
+                    type: string
+                  model:
+                    type: string
