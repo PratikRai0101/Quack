@@ -56,3 +56,21 @@ pub fn get_session(conn: &Connection, id: &str) -> Result<Option<Session>> {
         Ok(None)
     }
 }
+
+pub fn append_ai_response(conn: &Connection, session_id: &str, delta: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE sessions SET ai_response = ai_response || ?1 WHERE id = ?2",
+        params![delta, session_id],
+    )?;
+    Ok(())
+}
+
+pub fn create_message(conn: &Connection, session_id: &str, role: &str, content: &str) -> Result<String> {
+    let id = Uuid::new_v4().to_string();
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT INTO messages (id, session_id, role, content, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![id, session_id, role, content, now],
+    )?;
+    Ok(id)
+}

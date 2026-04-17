@@ -20,16 +20,44 @@ async fn followup(req: web::Json<FollowupRequest>) -> impl Responder {
 async fn followup_stream(path: web::Path<String>, _req: HttpRequest) -> impl Responder {
     let id = path.into_inner();
 
+    let db_path = std::env::var("DATABASE_URL").unwrap_or_else(|_| "quack.db".to_string());
+
     let s = stream! {
-        yield Ok::<_, actix_web::Error>(actix_web::web::Bytes::from(format!(
-            "event: chunk\ndata: {{\"content\":\"### **Follow-up Response (stub): {id}**\\n\\nThis is a simulated follow-up reply.\\n\"}}\n\n"
-        )));
+        let content1 = format!("### **Follow-up Response (stub): {id}**\n\nThis is a simulated follow-up reply.\n");
+        let db_path_clone = db_path.clone();
+        let id_clone = id.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            if let Ok(conn) = crate::db::pool::get_connection(&db_path_clone) {
+                let _ = crate::services::session::append_ai_response(&conn, &id_clone, &content1);
+                let _ = crate::services::session::create_message(&conn, &id_clone, "assistant", &content1);
+            }
+        }).await;
+        yield Ok::<_, actix_web::Error>(actix_web::web::Bytes::from(format!("event: chunk\ndata: {{\"content\":\"{}\"}}\n\n", content1)));
         tokio::time::sleep(Duration::from_millis(200)).await;
 
-        yield Ok(actix_web::web::Bytes::from("event: chunk\ndata: {\"content\":\"I recommend checking the types and ensuring conversions are correct.\\n\"}\n\n"));
+        let content2 = "I recommend checking the types and ensuring conversions are correct.\n".to_string();
+        let db_path_clone = db_path.clone();
+        let id_clone = id.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            if let Ok(conn) = crate::db::pool::get_connection(&db_path_clone) {
+                let _ = crate::services::session::append_ai_response(&conn, &id_clone, &content2);
+                let _ = crate::services::session::create_message(&conn, &id_clone, "assistant", &content2);
+            }
+        }).await;
+        yield Ok(actix_web::web::Bytes::from(format!("event: chunk\ndata: {{\"content\":\"{}\"}}\n\n", content2)));
         tokio::time::sleep(Duration::from_millis(200)).await;
 
-        yield Ok(actix_web::web::Bytes::from("event: done\ndata: {}\n\n"));
+        let done = "event: done\ndata: {}\n\n".to_string();
+        let db_path_clone = db_path.clone();
+        let id_clone = id.clone();
+        let content_done = "\n\n[followup stream done]\n".to_string();
+        let _ = tokio::task::spawn_blocking(move || {
+            if let Ok(conn) = crate::db::pool::get_connection(&db_path_clone) {
+                let _ = crate::services::session::append_ai_response(&conn, &id_clone, &content_done);
+                let _ = crate::services::session::create_message(&conn, &id_clone, "assistant", &content_done);
+            }
+        }).await;
+        yield Ok(actix_web::web::Bytes::from(done));
     };
 
     HttpResponse::Ok()
