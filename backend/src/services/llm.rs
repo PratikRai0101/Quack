@@ -87,7 +87,15 @@ pub fn stream_analysis(config: &LlmConfig, command: &str, stdout: &str, stderr: 
     let provider = config.provider.clone();
     let api_key = config.api_key.clone().unwrap_or_default();
     let model = config.model.clone().unwrap_or_else(|| "llama-3.3-70b-versatile".to_string());
-    let base_url = config.base_url.clone().unwrap_or_else(|| "https://api.groq.com/openai/v1/chat/completions".to_string());
+    // Choose sensible default base_url depending on provider when not explicitly set
+    let base_url = if let Some(url) = config.base_url.clone() {
+        url
+    } else if provider.to_lowercase() == "openai" {
+        "https://api.openai.com/v1/chat/completions".to_string()
+    } else {
+        // groq-compatible default
+        "https://api.groq.com/openai/v1/chat/completions".to_string()
+    };
 
     // Log start of LLM stream for observability
     tracing::info!(provider = %provider, model = %model, "llm.stream.start");
@@ -138,7 +146,7 @@ pub fn stream_analysis(config: &LlmConfig, command: &str, stdout: &str, stderr: 
                         } else {
                             let status = r.status();
                             if attempts >= max_attempts {
-                                tracing::error!("LLM request failed after attempts", status = %status, attempts = attempts);
+                                tracing::error!(status = %status, attempts = attempts, "LLM request failed after attempts");
                                 let _ = yield Err(anyhow::anyhow!(format!("LLM request failed with status {}", status)));
                                 return;
                             } else {
@@ -150,7 +158,7 @@ pub fn stream_analysis(config: &LlmConfig, command: &str, stdout: &str, stderr: 
                     }
                     Err(e) => {
                         if attempts >= max_attempts {
-                            tracing::error!("LLM request error final", error = %e, attempts = attempts);
+                            tracing::error!(error = %e, attempts = attempts, "LLM request error final");
                             let _ = yield Err(anyhow::anyhow!(e));
                             return;
                         } else {
