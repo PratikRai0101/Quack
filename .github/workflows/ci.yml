@@ -42,20 +42,32 @@ jobs:
           node-version: '18'
       - name: Install dependencies
         run: |
-          # CI runs in different checkout layouts. Prefer the workspace path used in the repo,
-          # but fall back to the top-level frontend folder when the worktree path isn't present.
-          if [ -d worktrees/opencode/frontend ]; then
+          # Find the frontend package.json anywhere in the checked-out tree and cd into it.
+          pkgdir=$(git ls-files | grep -E '(^|/)package.json$' | sed -E 's#/package.json$##' | head -n1 || true)
+          if [ -n "$pkgdir" ]; then
+            echo "Found package.json in: $pkgdir"
+            cd "$pkgdir"
+          elif [ -d worktrees/opencode/frontend ]; then
             cd worktrees/opencode/frontend
-          else
+          elif [ -d frontend ]; then
             cd frontend
+          else
+            echo "No frontend directory found. Listing repository root:" && ls -la
+            exit 1
           fi
           npm ci
       - name: Run unit tests
         run: |
-          if [ -d worktrees/opencode/frontend ]; then
+          pkgdir=$(git ls-files | grep -E '(^|/)package.json$' | sed -E 's#/package.json$##' | head -n1 || true)
+          if [ -n "$pkgdir" ]; then
+            cd "$pkgdir"
+          elif [ -d worktrees/opencode/frontend ]; then
             cd worktrees/opencode/frontend
-          else
+          elif [ -d frontend ]; then
             cd frontend
+          else
+            echo "No frontend directory found for tests." && ls -la
+            exit 1
           fi
           npm test
 
