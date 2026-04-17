@@ -11,6 +11,8 @@ struct FollowupRequest {
 
 #[post("/api/followup")]
 async fn followup(req: web::Json<FollowupRequest>) -> impl Responder {
+    // increment followup metric
+    crate::services::metrics::incr_followup();
     // For dev mode, return a stream_url pointing to /api/followup/{session_id}/stream
     let stream_url = format!("/api/followup/{}/stream", req.session_id);
     HttpResponse::Ok().json(serde_json::json!({"stream_url": stream_url}))

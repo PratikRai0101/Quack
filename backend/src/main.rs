@@ -59,6 +59,8 @@ async fn analyze(req: web::Json<AnalyzeRequest>) -> impl Responder {
                     let project_type = services::context::detect_project_type(None);
                     match services::session::create_session(&conn, &req.command, &out.stdout, &out.stderr, out.exit_code, &os_ctx, git_ctx.as_deref(), project_type.as_deref()) {
                         Ok(session_id) => {
+                            // increment analyze count metric
+                            crate::services::metrics::incr_analyze();
                             let res = AnalyzeResponse {
                                 session_id: session_id.clone(),
                                 command: req.command.clone(),
