@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  backend:
+    name: Backend CI (Rust)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain-action@stable
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+      - name: Build & test
+        run: |
+          cd backend
+          cargo build --verbose
+          cargo test --verbose
+
+  frontend:
+    name: Frontend CI (Node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install dependencies
+        run: |
+          cd worktrees/opencode/frontend
+          npm ci
+      - name: Run unit tests
+        run: |
+          cd worktrees/opencode/frontend
+          npm test
+
+  smoke-e2e:
+    name: Smoke E2E (backend + frontend)
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain-action@stable
+      - name: Build backend
+        run: |
+          cd backend
+          cargo build --release
+      - name: Start backend
+        run: |
+          cd backend
+          nohup ./target/release/quack-server &
+          sleep 1
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Run smoke test
+        run: |
+          cd worktrees/opencode/frontend
+          npm ci
+          node scripts/smoke-test.js
