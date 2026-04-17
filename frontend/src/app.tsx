@@ -4,6 +4,9 @@ import Header from './components/Header.js';
 import ErrorOutput from './components/ErrorOutput.js';
 import StreamingText from './components/StreamingText.js';
 import InputPrompt from './components/InputPrompt.js';
+import SettingsView from './components/SettingsView.js';
+import HistoryView from './components/HistoryView.js';
+import SessionDetail from './components/SessionDetail.js';
 import useStore from './store.js';
 
 import { useInput } from 'ink';
@@ -37,13 +40,28 @@ export default function App({ command }: { command?: string }) {
     }
   }, [command, sessionId]);
 
+
+
+  const uiMode = useStore((s) => s.uiMode);
+
+  let MainView: JSX.Element | null = null;
+  if (uiMode === 'settings') {
+    MainView = <SettingsView />;
+  } else if (uiMode === 'history') {
+    MainView = <HistoryView />;
+  } else if (uiMode === 'session') {
+    MainView = <SessionDetail />;
+  } else {
+    MainView = <StreamingText />;
+  }
+
   return (
     <Box flexDirection="column">
       <Header />
       <Box marginTop={1} />
       <ErrorOutput />
       <Box marginTop={1} />
-      <StreamingText />
+      {MainView}
       <Box marginTop={1} />
       <InputPrompt />
       <Box marginTop={1} />

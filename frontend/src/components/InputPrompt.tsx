@@ -53,16 +53,18 @@ export default function InputPrompt() {
     if (cmd === 'set' && parts.length >= 3) {
       const key = parts[1];
       const val = parts.slice(2).join(' ');
-      await handleSetCommand(key, val);
-      setValue('');
-      return;
+     await handleSetCommand(key, val);
+     useStore.getState().setUiMode('settings');
+     setValue('');
+     return;
     }
 
     if (cmd === 'history') {
-      try {
-        await useStore.getState().loadHistory();
-        appendChunk('\n\n[History loaded]');
-      } catch (e: any) {
+     try {
+       await useStore.getState().loadHistory();
+       useStore.getState().setUiMode('history');
+       appendChunk('\n\n[History loaded]');
+     } catch (e: any) {
         appendChunk(`\n\n[Failed to load history: ${e.message ?? e}]`);
       }
       setValue('');
@@ -71,10 +73,11 @@ export default function InputPrompt() {
 
     if (cmd === 'view' && parts.length >= 2) {
       const id = parts[1];
-      try {
-        await useStore.getState().loadSession(id);
-        appendChunk(`\n\n[Loaded session ${id}]`);
-      } catch (e: any) {
+     try {
+       await useStore.getState().loadSession(id);
+       useStore.getState().setUiMode('session');
+       appendChunk(`\n\n[Loaded session ${id}]`);
+     } catch (e: any) {
         appendChunk(`\n\n[Failed to load session: ${e.message ?? e}]`);
       }
       setValue('');

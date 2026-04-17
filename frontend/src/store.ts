@@ -3,7 +3,36 @@ import EventSource from 'eventsource';
 import clipboardy from 'clipboardy';
 import { extractFirstFencedCode } from './utils/markdown';
 
+type HistorySummary = {
+  id: string;
+  command?: string;
+  exit_code?: number;
+  created_at?: string;
+};
+
+// Likely shape; update to openapi type on next regenerate
+type HistorySessionDetail = {
+  id: string;
+  command?: string;
+  stdout?: string;
+  stderr?: string;
+  exit_code?: number;
+  created_at?: string;
+};
+
+type UiMode = 'default' | 'settings' | 'history' | 'session';
+
 type State = {
+  // History/session state
+  history: null | HistorySummary[];
+  currentSession: null | HistorySessionDetail;
+  historyLoading: boolean;
+  sessionLoading: boolean;
+   historyError?: string | null;
+   sessionError?: string | null;
+
+   uiMode: UiMode;
+   setUiMode: (m: UiMode) => void;
   backendUrl: string;
   sessionId?: string | null;
   command?: string | null;
@@ -25,6 +54,17 @@ type State = {
 
 export const useStore = create<State>((set, get) => ({
   backendUrl: process.env.QUACK_BACKEND_URL ?? 'http://localhost:3001',
+
+  uiMode: 'default',
+  setUiMode: (m: UiMode) => set({ uiMode: m }),
+
+  // --- History/session state ---
+  history: null,
+  currentSession: null,
+  historyLoading: false,
+  sessionLoading: false,
+  historyError: null,
+  sessionError: null,
   sessionId: null,
   command: null,
   stdout: '',
@@ -34,7 +74,35 @@ export const useStore = create<State>((set, get) => ({
   isStreaming: false,
   es: null,
   inputActive: false,
-  setInputActive: (b: boolean) => set({ inputActive: b }),
+   setInputActive: (b: boolean) => set({ inputActive: b }),
+
+   loadHistory: async () => {
+     set({ historyLoading: true, historyError: null });
+     const base = get().backendUrl;
+     try {
+       const res = await fetch(`${base}/api/history`);
+       if (!res.ok) throw new Error(`Failed to load history: ${res.statusText}`);
+       const data = await res.json();
+       // Defensive, ensure array
+       set({ history: Array.isArray(data) ? data : data && data.length ? data : [], historyLoading: false });
+     } catch (err: any) {
+       set({ historyError: err.message ?? String(err), historyLoading: false });
+     }
+   },
+
+   loadSession: async (id: string) => {
+     set({ sessionLoading: true, sessionError: null });
+     const base = get().backendUrl;
+     try {
+       const res = await fetch(`${base}/api/history/${id}`);
+       if (!res.ok) throw new Error(`Failed to load session: ${res.statusText}`);
+       const data = await res.json();
+       set({ currentSession: data, sessionLoading: false });
+     } catch (err: any) {
+       set({ sessionError: err.message ?? String(err), sessionLoading: false });
+     }
+   },
+
 
   analyze: async (command: string) => {
     const base = get().backendUrl;
@@ -98,7 +166,10 @@ export const useStore = create<State>((set, get) => ({
     if (cmd) await get().analyze(cmd);
   },
 
-    reset: () => set({ sessionId: null, command: null, stdout: '', stderr: '', aiResponse: '', isAnalyzing: false, isStreaming: false }),
+    reset: () => set({
+     sessionId: null, command: null, stdout: '', stderr: '', aiResponse: '', isAnalyzing: false, isStreaming: false,
+     history: null, currentSession: null, historyLoading: false, sessionLoading: false, historyError: null, sessionError: null
+   }),
 
     followUp: async (question: string) => {
       const base = get().backendUrl;
