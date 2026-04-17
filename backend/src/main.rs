@@ -47,6 +47,7 @@ async fn health() -> impl Responder {
 #[post("/api/analyze")]
 async fn analyze(req: web::Json<AnalyzeRequest>) -> impl Responder {
     // Run the command via shell service
+    tracing::info!(command = %req.command, "analyze.request");
     match services::shell::replay_command(&req.command) {
         Ok(out) => {
             // Try to persist session

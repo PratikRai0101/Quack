@@ -51,23 +51,11 @@ jobs:
     needs: [backend, frontend]
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain-action@stable
-      - name: Build backend
-        run: |
-          cd backend
-          cargo build --release
-      - name: Start backend
-        run: |
-          cd backend
-          nohup ./target/release/quack-server &
-          sleep 1
-      - name: Setup Node
+      - name: Setup Rust & Node
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-      - name: Run smoke test
+      - name: Run e2e smoke script
         run: |
-          cd worktrees/opencode/frontend
-          npm ci
-          node scripts/smoke-test.js
+          chmod +x ./scripts/e2e-smoke.sh || true
+          ./scripts/e2e-smoke.sh
