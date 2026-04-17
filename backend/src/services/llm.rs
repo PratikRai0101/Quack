@@ -206,7 +206,6 @@ fn find_double_newline(buf: &[u8]) -> Option<usize> {
 
 /// Stream a followup: use provider if configured, else stub.
 use futures_util::stream::BoxStream;
-use std::pin::Pin;
 
 pub fn stream_followup(config: &LlmConfig, session_id: &str, question: &str) -> BoxStream<'static, Result<String>> {
     if config.provider == "groq" {

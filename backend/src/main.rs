@@ -6,7 +6,7 @@ use async_stream::stream;
 use futures_util::StreamExt;
 use actix_web::http::header::{CONTENT_TYPE, CACHE_CONTROL};
 
-use tracing::{info, warn, error};
+use tracing::{info, error};
 use tracing_subscriber;
 
 mod db;

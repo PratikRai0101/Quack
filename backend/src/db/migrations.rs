@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection, Result};
+use rusqlite::{Connection, Result};
 
 pub fn run_migrations(db_path: &str) -> Result<()> {
     let conn = Connection::open(db_path)?;
