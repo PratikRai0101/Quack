@@ -1,2 +1,5 @@
 /target
 .env
+backend/quack.db
+worktrees/opencode/frontend/node_modules/
+worktrees/opencode/frontend/dist/

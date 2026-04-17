@@ -114,7 +114,8 @@ async fn analyze_stream(path: web::Path<String>, _req: HttpRequest) -> impl Resp
                             // Call into LLM service with actual session data
                             let mut llm_stream = Box::pin(crate::services::llm::stream_analysis(&llm_cfg, &sess.command, &sess.stdout, &sess.stderr, sess.git_context.clone(), &sess.os_context));
                             // log start
-                            tracing::info!(session_id = %id, trace_id = %trace_id, "llm.stream.session.start");
+                                                    tracing::info!(session_id = %id, trace_id = %trace_id, "llm.stream.session.start");
+                            crate::services::metrics::incr_llm_stream_start();
                             while let Some(item) = llm_stream.as_mut().next().await {
                                 match item {
                                     Ok(chunk) => {
@@ -269,6 +270,7 @@ async fn main() -> std::io::Result<()> {
             .service(crate::routes::followup::followup_stream)
             .service(crate::routes::settings::get_settings)
             .service(crate::routes::settings::put_settings)
+            .service(crate::routes::metrics::get_metrics)
     })
     .bind(("127.0.0.1", port))?
     .run()
