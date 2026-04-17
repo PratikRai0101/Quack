@@ -26,10 +26,11 @@ async fn followup_stream(path: web::Path<String>, _req: HttpRequest) -> impl Res
         let content1 = format!("### **Follow-up Response (stub): {id}**\n\nThis is a simulated follow-up reply.\n");
         let db_path_clone = db_path.clone();
         let id_clone = id.clone();
+        let c1 = content1.clone();
         let _ = tokio::task::spawn_blocking(move || {
             if let Ok(conn) = crate::db::pool::get_connection(&db_path_clone) {
-                let _ = crate::services::session::append_ai_response(&conn, &id_clone, &content1);
-                let _ = crate::services::session::create_message(&conn, &id_clone, "assistant", &content1);
+                let _ = crate::services::session::append_ai_response(&conn, &id_clone, &c1);
+                let _ = crate::services::session::create_message(&conn, &id_clone, "assistant", &c1);
             }
         }).await;
         yield Ok::<_, actix_web::Error>(actix_web::web::Bytes::from(format!("event: chunk\ndata: {{\"content\":\"{}\"}}\n\n", content1)));
@@ -38,10 +39,11 @@ async fn followup_stream(path: web::Path<String>, _req: HttpRequest) -> impl Res
         let content2 = "I recommend checking the types and ensuring conversions are correct.\n".to_string();
         let db_path_clone = db_path.clone();
         let id_clone = id.clone();
+        let c2 = content2.clone();
         let _ = tokio::task::spawn_blocking(move || {
             if let Ok(conn) = crate::db::pool::get_connection(&db_path_clone) {
-                let _ = crate::services::session::append_ai_response(&conn, &id_clone, &content2);
-                let _ = crate::services::session::create_message(&conn, &id_clone, "assistant", &content2);
+                let _ = crate::services::session::append_ai_response(&conn, &id_clone, &c2);
+                let _ = crate::services::session::create_message(&conn, &id_clone, "assistant", &c2);
             }
         }).await;
         yield Ok(actix_web::web::Bytes::from(format!("event: chunk\ndata: {{\"content\":\"{}\"}}\n\n", content2)));
@@ -51,10 +53,11 @@ async fn followup_stream(path: web::Path<String>, _req: HttpRequest) -> impl Res
         let db_path_clone = db_path.clone();
         let id_clone = id.clone();
         let content_done = "\n\n[followup stream done]\n".to_string();
+        let cd = content_done.clone();
         let _ = tokio::task::spawn_blocking(move || {
             if let Ok(conn) = crate::db::pool::get_connection(&db_path_clone) {
-                let _ = crate::services::session::append_ai_response(&conn, &id_clone, &content_done);
-                let _ = crate::services::session::create_message(&conn, &id_clone, "assistant", &content_done);
+                let _ = crate::services::session::append_ai_response(&conn, &id_clone, &cd);
+                let _ = crate::services::session::create_message(&conn, &id_clone, "assistant", &cd);
             }
         }).await;
         yield Ok(actix_web::web::Bytes::from(done));
