@@ -215,3 +215,35 @@ pub fn stream_followup(config: &LlmConfig, session_id: &str, question: &str) -> 
         Box::pin(stream_followup_stub(session_id, question))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures_util::stream::StreamExt;
+
+    #[tokio::test]
+    async fn test_stream_analysis_stub_yields_solution() {
+        let cfg = LlmConfig { provider: "stub".to_string(), api_key: None, model: None, base_url: None };
+        let mut s = Box::pin(stream_analysis(&cfg, "cargo build", "", "", None, "linux"));
+        let mut accum = String::new();
+        while let Some(item) = s.as_mut().next().await {
+            let chunk = item.expect("stream item");
+            accum.push_str(&chunk);
+            if accum.contains("The Solution") { break; }
+        }
+        assert!(accum.contains("The Solution"));
+    }
+
+    #[tokio::test]
+    async fn test_stream_followup_stub_yields_solution() {
+        let cfg = LlmConfig { provider: "stub".to_string(), api_key: None, model: None, base_url: None };
+        let mut s = Box::pin(stream_followup(&cfg, "sess-1", "why does this happen?"));
+        let mut accum = String::new();
+        while let Some(item) = s.as_mut().next().await {
+            let chunk = item.expect("stream item");
+            accum.push_str(&chunk);
+            if accum.contains("The Solution") { break; }
+        }
+        assert!(accum.contains("The Solution"));
+    }
+}
