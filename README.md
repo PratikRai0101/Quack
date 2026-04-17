@@ -160,7 +160,22 @@ Quick Start
 Development
 -----------
 
-- Run tests:
+Development: enabling real LLM provider vs stub
+
+By default the backend runs in stub mode (QUACK_STUB_LLM=1) which returns simulated streaming chunks for frontend development. To enable real provider streaming (Groq), set the following env vars before starting the backend:
+
+```bash
+export QUACK_STUB_LLM=0
+export LLM_PROVIDER=groq
+export LLM_API_KEY=your_groq_api_key
+# optional
+export LLM_MODEL="llama-3.3-70b-versatile"
+export LLM_BASE_URL="https://api.groq.com/openai/v1/chat/completions"
+```
+
+Restart the backend and analyze/followup SSE endpoints will stream real model deltas (and persist them to the session DB).
+
+Run tests:
 
 ```bash
 cargo test
