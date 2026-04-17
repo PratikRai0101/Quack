@@ -128,7 +128,7 @@ pub fn stream_analysis(config: &LlmConfig, command: &str, stdout: &str, stderr: 
 
             // Retry loop for establishing the streaming request
             let mut attempts = 0usize;
-            let max_attempts = 3usize;
+            let max_attempts = 5usize;
             let resp = loop {
                 attempts += 1;
                 match client.post(&base_url).bearer_auth(&api_key).json(&body).send().await {
@@ -138,20 +138,24 @@ pub fn stream_analysis(config: &LlmConfig, command: &str, stdout: &str, stderr: 
                         } else {
                             let status = r.status();
                             if attempts >= max_attempts {
+                                tracing::error!("LLM request failed after attempts", status = %status, attempts = attempts);
                                 let _ = yield Err(anyhow::anyhow!(format!("LLM request failed with status {}", status)));
                                 return;
                             } else {
-                                tokio::time::sleep(Duration::from_millis(250 * attempts as u64)).await;
+                                let backoff_ms = std::cmp::min(2000, 250u64.saturating_mul(1u64 << (attempts as u32 - 1)));
+                                tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
                                 continue;
                             }
                         }
                     }
                     Err(e) => {
                         if attempts >= max_attempts {
+                            tracing::error!("LLM request error final", error = %e, attempts = attempts);
                             let _ = yield Err(anyhow::anyhow!(e));
                             return;
                         } else {
-                            tokio::time::sleep(Duration::from_millis(250 * attempts as u64)).await;
+                            let backoff_ms = std::cmp::min(2000, 250u64.saturating_mul(1u64 << (attempts as u32 - 1)));
+                            tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
                             continue;
                         }
                     }
