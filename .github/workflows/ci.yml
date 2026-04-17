@@ -13,7 +13,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
-        uses: dtolnay/rust-toolchain-action@stable
+        # Use actions-rs/toolchain which is maintained and available on GitHub Actions
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
       - name: Cache Cargo registry
         uses: actions/cache@v4
         with:
@@ -38,11 +42,21 @@ jobs:
           node-version: '18'
       - name: Install dependencies
         run: |
-          cd worktrees/opencode/frontend
+          # CI runs in different checkout layouts. Prefer the workspace path used in the repo,
+          # but fall back to the top-level frontend folder when the worktree path isn't present.
+          if [ -d worktrees/opencode/frontend ]; then
+            cd worktrees/opencode/frontend
+          else
+            cd frontend
+          fi
           npm ci
       - name: Run unit tests
         run: |
-          cd worktrees/opencode/frontend
+          if [ -d worktrees/opencode/frontend ]; then
+            cd worktrees/opencode/frontend
+          else
+            cd frontend
+          fi
           npm test
 
   smoke-e2e:
