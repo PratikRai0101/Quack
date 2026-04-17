@@ -89,23 +89,64 @@ async fn analyze_stream(path: web::Path<String>, _req: HttpRequest) -> impl Resp
     // Stubbed SSE stream for frontend development. Emits a few chunks and a done event.
     let id = path.into_inner();
 
+    let db_path = std::env::var("DATABASE_URL").unwrap_or_else(|_| "quack.db".to_string());
+
     let s = stream! {
         // First chunk: analysis header
-        yield Ok::<_, actix_web::Error>(actix_web::web::Bytes::from(format!(
-            "event: chunk\ndata: {{\"content\":\"### **Analysis: {id}**\\n\\nThis is a simulated analysis stream for frontend development.\\n\"}}\n\n"
-        )));
+        let chunk1 = format!("event: chunk\ndata: {{\"content\":\"### **Analysis: {id}**\\n\\nThis is a simulated analysis stream for frontend development.\\n\"}}\n\n");
+        // persist chunk when possible
+        let db_path_clone = db_path.clone();
+        let id_clone = id.clone();
+        let content1 = "### **Analysis:".to_string() + &id_clone + "**\n\nThis is a simulated analysis stream for frontend development.\n";
+        let _ = tokio::task::spawn_blocking(move || {
+            if let Ok(conn) = crate::db::pool::get_connection(&db_path_clone) {
+                let _ = crate::services::session::append_ai_response(&conn, &id_clone, &content1);
+                let _ = crate::services::session::create_message(&conn, &id_clone, "assistant", &content1);
+            }
+        }).await;
+        yield Ok::<_, actix_web::Error>(actix_web::web::Bytes::from(chunk1));
         tokio::time::sleep(Duration::from_millis(250)).await;
 
         // Second chunk: the glitch
-        yield Ok(actix_web::web::Bytes::from("event: chunk\ndata: {\"content\":\"### **The Glitch**\\nA simulated compiler error: mismatched types.\\n\"}\n\n"));
+        let chunk2 = "event: chunk\ndata: {\"content\":\"### **The Glitch**\\nA simulated compiler error: mismatched types.\\n\"}\n\n".to_string();
+        let db_path_clone = db_path.clone();
+        let id_clone = id.clone();
+        let content2 = "### **The Glitch**\nA simulated compiler error: mismatched types.\n".to_string();
+        let _ = tokio::task::spawn_blocking(move || {
+            if let Ok(conn) = crate::db::pool::get_connection(&db_path_clone) {
+                let _ = crate::services::session::append_ai_response(&conn, &id_clone, &content2);
+                let _ = crate::services::session::create_message(&conn, &id_clone, "assistant", &content2);
+            }
+        }).await;
+        yield Ok(actix_web::web::Bytes::from(chunk2));
         tokio::time::sleep(Duration::from_millis(250)).await;
 
         // Third chunk: the solution (fenced code)
-        yield Ok(actix_web::web::Bytes::from("event: chunk\ndata: {\"content\":\"### **The Solution**\\n```rust\\nlet x: i32 = 42;\\n```\\n\"}\n\n"));
+        let chunk3 = "event: chunk\ndata: {\"content\":\"### **The Solution**\\n```rust\\nlet x: i32 = 42;\\n```\\n\"}\n\n".to_string();
+        let db_path_clone = db_path.clone();
+        let id_clone = id.clone();
+        let content3 = "### **The Solution**\n```rust\nlet x: i32 = 42;\n```\n".to_string();
+        let _ = tokio::task::spawn_blocking(move || {
+            if let Ok(conn) = crate::db::pool::get_connection(&db_path_clone) {
+                let _ = crate::services::session::append_ai_response(&conn, &id_clone, &content3);
+                let _ = crate::services::session::create_message(&conn, &id_clone, "assistant", &content3);
+            }
+        }).await;
+        yield Ok(actix_web::web::Bytes::from(chunk3));
         tokio::time::sleep(Duration::from_millis(250)).await;
 
         // Done event
-        yield Ok(actix_web::web::Bytes::from("event: done\ndata: {}\n\n"));
+        let done = "event: done\ndata: {}\n\n".to_string();
+        let db_path_clone = db_path.clone();
+        let id_clone = id.clone();
+        let content_done = "\n\n[stream done]\n".to_string();
+        let _ = tokio::task::spawn_blocking(move || {
+            if let Ok(conn) = crate::db::pool::get_connection(&db_path_clone) {
+                let _ = crate::services::session::append_ai_response(&conn, &id_clone, &content_done);
+                let _ = crate::services::session::create_message(&conn, &id_clone, "assistant", &content_done);
+            }
+        }).await;
+        yield Ok(actix_web::web::Bytes::from(done));
     };
 
     HttpResponse::Ok()
