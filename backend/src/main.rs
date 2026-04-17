@@ -1,11 +1,13 @@
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder, HttpRequest};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use chrono::Utc;
 use std::time::Duration;
 use async_stream::stream;
 use futures_util::StreamExt;
 use actix_web::http::header::{CONTENT_TYPE, CACHE_CONTROL};
+
+use tracing::{info, warn, error};
+use tracing_subscriber;
 
 mod db;
 mod services;
@@ -35,7 +37,11 @@ struct AnalyzeResponse {
 
 #[get("/api/health")]
 async fn health() -> impl Responder {
-    HttpResponse::Ok().json(serde_json::json!({"status":"ok","version":"2.0.0"}))
+    let db_path = std::env::var("DATABASE_URL").unwrap_or_else(|_| "quack.db".to_string());
+    let llm_cfg = crate::services::llm::LlmConfig::from_db_or_env(&db_path);
+    let provider = llm_cfg.provider.clone();
+    let provider_configured = llm_cfg.api_key.is_some();
+    HttpResponse::Ok().json(serde_json::json!({"status":"ok","version":"2.0.0","provider": provider, "provider_configured": provider_configured}))
 }
 
 #[post("/api/analyze")]
@@ -92,10 +98,12 @@ async fn analyze_stream(path: web::Path<String>, _req: HttpRequest) -> impl Resp
     let db_path = std::env::var("DATABASE_URL").unwrap_or_else(|_| "quack.db".to_string());
 
     // Decide whether to use real LLM or stubbed streaming
-    let llm_cfg = crate::services::llm::LlmConfig::from_env();
+    let llm_cfg = crate::services::llm::LlmConfig::from_db_or_env(&db_path);
     let use_stub = std::env::var("QUACK_STUB_LLM").unwrap_or_else(|_| "1".to_string()) == "1";
 
     let s = stream! {
+        // generate a trace id for this stream
+        let trace_id = uuid::Uuid::new_v4().to_string();
         if !use_stub && llm_cfg.provider == "groq" {
             // Try to stream real LLM output for this session
             match crate::db::pool::get_connection(&db_path) {
@@ -104,6 +112,8 @@ async fn analyze_stream(path: web::Path<String>, _req: HttpRequest) -> impl Resp
                         Ok(Some(sess)) => {
                             // Call into LLM service with actual session data
                             let mut llm_stream = Box::pin(crate::services::llm::stream_analysis(&llm_cfg, &sess.command, &sess.stdout, &sess.stderr, sess.git_context.clone(), &sess.os_context));
+                            // log start
+                            tracing::info!(session_id = %id, trace_id = %trace_id, "llm.stream.session.start");
                             while let Some(item) = llm_stream.as_mut().next().await {
                                 match item {
                                     Ok(chunk) => {
@@ -118,13 +128,13 @@ async fn analyze_stream(path: web::Path<String>, _req: HttpRequest) -> impl Resp
                                             }
                                         }).await;
 
-                                        // send SSE chunk with JSON payload
-                                        let payload = serde_json::json!({"content": chunk});
+                                        // send SSE chunk with JSON payload including trace_id
+                                        let payload = serde_json::json!({"content": chunk, "trace_id": trace_id});
                                         let data = format!("event: chunk\ndata: {}\n\n", payload.to_string());
                                         yield Ok::<_, actix_web::Error>(actix_web::web::Bytes::from(data));
                                     }
                                     Err(e) => {
-                                        let payload = serde_json::json!({"message": format!("LLM error: {}", e)});
+                                        let payload = serde_json::json!({"message": format!("LLM error: {}", e), "trace_id": trace_id});
                                         let data = format!("event: error\ndata: {}\n\n", payload.to_string());
                                         let _ = yield Ok::<_, actix_web::Error>(actix_web::web::Bytes::from(data));
                                         break;
@@ -136,27 +146,28 @@ async fn analyze_stream(path: web::Path<String>, _req: HttpRequest) -> impl Resp
                             let _ = tokio::task::spawn_blocking({
                                 let db_path_clone = db_path.clone();
                                 let id_clone = id.clone();
+                                let trace_clone = trace_id.clone();
                                 move || {
                                     if let Ok(conn2) = crate::db::pool::get_connection(&db_path_clone) {
-                                        let _ = crate::services::session::append_ai_response(&conn2, &id_clone, "\n\n[stream done]\n");
-                                        let _ = crate::services::session::create_message(&conn2, &id_clone, "assistant", "\n\n[stream done]\n");
+                                        let _ = crate::services::session::append_ai_response(&conn2, &id_clone, &format!("\n\n[stream done] trace_id:{}\n", trace_clone));
+                                        let _ = crate::services::session::create_message(&conn2, &id_clone, "assistant", &format!("\n\n[stream done] trace_id:{}\n", trace_clone));
                                     }
                                 }
                             }).await;
                             yield Ok(actix_web::web::Bytes::from(done));
                         }
                         Ok(None) => {
-                            let msg = serde_json::json!({"error": "session not found"});
+                            let msg = serde_json::json!({"error": "session not found", "trace_id": trace_id});
                             yield Ok(actix_web::web::Bytes::from(format!("event: error\ndata: {}\n\n", msg.to_string())));
                         }
                         Err(e) => {
-                            let msg = serde_json::json!({"error": format!("DB error: {}", e)});
+                            let msg = serde_json::json!({"error": format!("DB error: {}", e), "trace_id": trace_id});
                             yield Ok(actix_web::web::Bytes::from(format!("event: error\ndata: {}\n\n", msg.to_string())));
                         }
                     }
                 }
                 Err(e) => {
-                    let msg = serde_json::json!({"error": format!("DB open failed: {}", e)});
+                    let msg = serde_json::json!({"error": format!("DB open failed: {}", e), "trace_id": trace_id});
                     yield Ok(actix_web::web::Bytes::from(format!("event: error\ndata: {}\n\n", msg.to_string())));
                 }
             }
@@ -229,18 +240,21 @@ async fn analyze_stream(path: web::Path<String>, _req: HttpRequest) -> impl Resp
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    // Initialize tracing subscriber from environment (RUST_LOG)
+    tracing_subscriber::fmt::init();
+
     // Load .env if present
     let _ = dotenvy::dotenv();
 
     // Initialize DB migrations
     let db_path = std::env::var("DATABASE_URL").unwrap_or_else(|_| "quack.db".to_string());
     match run_migrations(&db_path) {
-        Ok(_) => println!("Database migrations applied (db={})", db_path),
-        Err(e) => eprintln!("Failed to apply migrations: {}", e),
+        Ok(_) => info!("Database migrations applied (db={})", db_path),
+        Err(e) => error!("Failed to apply migrations: {}", e),
     }
 
     let port: u16 = std::env::var("PORT").unwrap_or_else(|_| "3001".to_string()).parse().unwrap_or(3001);
-    println!("Starting quack-server on http://127.0.0.1:{}", port);
+    info!("Starting quack-server on http://127.0.0.1:{}", port);
 
     HttpServer::new(|| {
         App::new()

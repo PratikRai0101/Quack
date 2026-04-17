@@ -90,7 +90,7 @@ pub fn stream_analysis(config: &LlmConfig, command: &str, stdout: &str, stderr: 
     let base_url = config.base_url.clone().unwrap_or_else(|| "https://api.groq.com/openai/v1/chat/completions".to_string());
 
     // Log start of LLM stream for observability
-    tracing::info!("llm.stream.start", provider = %provider, model = %model);
+    tracing::info!(provider = %provider, model = %model, "llm.stream.start");
 
     stream! {
         if provider == "groq" {

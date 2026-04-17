@@ -21,6 +21,7 @@ async fn followup_stream(path: web::Path<String>, _req: HttpRequest) -> impl Res
     let id = path.into_inner();
 
     let db_path = std::env::var("DATABASE_URL").unwrap_or_else(|_| "quack.db".to_string());
+    let trace_id = uuid::Uuid::new_v4().to_string();
 
     let s = stream! {
         let content1 = format!("### **Follow-up Response (stub): {id}**\n\nThis is a simulated follow-up reply.\n");
@@ -33,7 +34,7 @@ async fn followup_stream(path: web::Path<String>, _req: HttpRequest) -> impl Res
                 let _ = crate::services::session::create_message(&conn, &id_clone, "assistant", &c1);
             }
         }).await;
-        yield Ok::<_, actix_web::Error>(actix_web::web::Bytes::from(format!("event: chunk\ndata: {{\"content\":\"{}\"}}\n\n", content1)));
+        yield Ok::<_, actix_web::Error>(actix_web::web::Bytes::from(format!("event: chunk\ndata: {{\"content\":\"{}\", \"trace_id\": \"{}\"}}\n\n", content1, trace_id)));
         tokio::time::sleep(Duration::from_millis(200)).await;
 
         let content2 = "I recommend checking the types and ensuring conversions are correct.\n".to_string();
@@ -46,7 +47,7 @@ async fn followup_stream(path: web::Path<String>, _req: HttpRequest) -> impl Res
                 let _ = crate::services::session::create_message(&conn, &id_clone, "assistant", &c2);
             }
         }).await;
-        yield Ok(actix_web::web::Bytes::from(format!("event: chunk\ndata: {{\"content\":\"{}\"}}\n\n", content2)));
+        yield Ok(actix_web::web::Bytes::from(format!("event: chunk\ndata: {{\"content\":\"{}\", \"trace_id\": \"{}\"}}\n\n", content2, trace_id)));
         tokio::time::sleep(Duration::from_millis(200)).await;
 
         let done = "event: done\ndata: {}\n\n".to_string();
