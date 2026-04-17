@@ -89,6 +89,9 @@ pub fn stream_analysis(config: &LlmConfig, command: &str, stdout: &str, stderr: 
     let model = config.model.clone().unwrap_or_else(|| "llama-3.3-70b-versatile".to_string());
     let base_url = config.base_url.clone().unwrap_or_else(|| "https://api.groq.com/openai/v1/chat/completions".to_string());
 
+    // Log start of LLM stream for observability
+    tracing::info!("llm.stream.start", provider = %provider, model = %model);
+
     stream! {
         if provider == "groq" {
             // Use Groq's OpenAI-compatible endpoint
